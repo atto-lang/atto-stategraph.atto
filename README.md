@@ -1,75 +1,132 @@
-# StateGraph for Oreslang (`sg`)
+# Native Oreslang StateGraph (sg)
 
-Native, typed workflow graph execution in **Oreslang source** (no Python/JS orchestration runtime). This repository implements a small, deterministic initial execution kernel and declares the boundaries of future LangGraph-style functionality.
+**Status: experimental draft; guest compiler execution not yet verified.**
+This is the consolidation of the typed execution kernel in PR #1 and the
+snapshot/patch/superstep semantics in PR #2. The entire graph engine is authored
+in Oreslang, not Python, JavaScript, Java, or an FFI orchestration layer.
 
-## v0 implementation
+## Typed API
 
-- `sg.StateGraph<S>` owns an immutable graph definition with typed `Node<S>` callbacks and guarded `Edge<S>` transitions.
-- Reserved `START` and `END` sentinels; `END` is terminal.
-- `validate()` checks duplicate/reserved node names, invalid edge endpoints, missing START edges, and budgets before any callback runs.
-- `run(initial)` applies one node at a time, examines edges using the candidate updated state, and requires **exactly one** matching edge.
-- Bounded loops, deterministic status and step count, and return of the last committed state on routing errors.
-- Immutable-by-contract state transformations; no implicit conversions or automatic flattening.
+The central type is StateGraph<S>, with a caller-owned application state S.
+A required Fnc<S(S)> copy_state function must return a fully independent state
+snapshot; use immutable value objects or deep-copy all mutable nested members.
+The engine cannot statically enforce that user-supplied copy callbacks are pure.
 
-### API sketch (Oreslang)
+Each node implements Fnc<StatePatch<S>(S)> and receives an independent snapshot
+of the *same committed version* within a superstep. A patch consists of
+GraphWrite<S> entries with keyed typed Fnc<S(S)> update functions.
 
-```ores
-import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+- StatePatch<S>.set("key", function) performs a single-writer overwrite.
+- add_reducer("key") admits StatePatch<S>.reduce("key", function).
+- Writes to one reducer key are folded deterministically in frontier and patch
+  order. Callers must supply associative/commutative reducer operations if they
+  need order-independent behavior; algebraic laws are NOT checked.
+- Every patch rejects duplicate write keys. Two nodes overwriting the same
+  exclusive key in one superstep produce a conflict without publishing updates.
+- Unregistered reducer operations or overwriting a reducer key are rejected.
 
-fnc always(String state): bool { return true; }
-fnc update(String node, String state): String { return state + "-updated"; }
+### Example (Oreslang)
 
-pub routine main(): void {
-  val StateGraph<String> graph = new StateGraph<String>(
-    arr[new Node<String>("work", update)],
-    arr[
-      new Edge<String>("START", "work", always),
-      new Edge<String>("work", "END", always)
-    ],
-    8
-  );
-  val RunResult<String> result = graph.run("seed");
-  stdio.stdout.write(result.status);
-  return;
+~~~ores
+import class StateGraph, StatePatch, GraphResult from "./src/stategraph";
+
+define class Count as
+  pub val int value;
+end
+
+fnc copy_count(Count state) -> Count {
+  return new Count(state.value);
 }
-```
+fnc increase(Count state) -> Count {
+  return new Count(state.value + 1);
+}
+fnc step(Count state) -> StatePatch<Count> {
+  val StatePatch<Count> patch = new StatePatch<Count>();
+  patch.reduce("value", increase);
+  return patch;
+}
 
-The complete runnable acceptance programs are in `tests/native/`.
+pub routine main() -> int {
+  val StateGraph<Count> graph = new StateGraph<Count>(copy_count);
+  graph.add_node("step", step);
+  graph.add_reducer("value");
+  graph.set_entry_point("step");
+  graph.set_finish_point("step");
+  if !graph.compile() then return 1; fi
+  val GraphResult<Count> result = graph.invoke(new Count(5), 8);
+  if !result.ok then return result.error_code; fi
+  if result.state.value != 6 then return 2; fi
+  return 0;
+}
+~~~
 
-## Deliberate limitations
+## Deterministic execution contract
 
-The v0 kernel alone is **not** a feature-complete LangGraph replacement: no runtime actor workers, parallel node execution, async/actor node scheduling, checkpoint storage, interrupts, resume, retries, distributed execution, or hot-upgrade replay guarantees. Callback purity is required by contract and **not verified by the compiler**; callbacks with external effects can still execute before a later failure. This release does not provide transactional side-effect rollback.
+- Named nodes, "__start__"/"__end__", regular edges, conditional branches
+  with allowlisted choices, topology validation, and builder freeze.
+- Fan-out executes each distinct named node once per superstep, sequentially
+  in v1; all callbacks receive separate copies of the committed state.
+- Pre-validate all patch write sets and reducer modes, apply them to a *candidate*
+  snapshot, evaluate all conditional routes on post-update candidate snapshots,
+  then publish the candidate in one graph-state commit.
+- Duplicate edges, missing nodes, malformed routes, empty entry graphs, and
+  ambiguous parallel END plus continuing work fail closed.
+- Fan-in deduplicates destinations into the next superstep. Cycles require a
+  1..100000 superstep budget, with a bounded pending frontier on exhaustion.
+- Config limits: 1024 nodes, 8192 edges, 1024 conditional branches and 1024
+  registered reducer keys; each node patch has at most 1024 keyed updates.
 
-Each `StateGraph<S>` definition is immutable. User callbacks are responsible for implementing node behavior. The graph does not access the host, infer authority from state strings, or grant capabilities.
+The runtime does not roll back external callback side effects, exceptions,
+actor sends or database writes. Checked arithmetic is not part of the generic
+patch engine. This is a sequential prototype (not actor-parallel or durable).
 
-## Validation
+## Error codes
 
-`sh ci/audit-source.sh` runs a source-only policy check; it is **not** a native guest execution result.
+| Code | Meaning |
+|---|---|
+| 0 | Completed through END |
+| 1 | Not compiled |
+| 2 | Bad superstep budget |
+| 3 | Invalid/duplicate node patch |
+| 4 | Mismatched reducer admission policy |
+| 5 | Concurrent exclusive overwrite conflict |
+| 6 | Conditional branch selected an undeclared destination |
+| 7 | Step budget exhausted; pending frontier returned |
+| 8 | Dead-end without END |
+| 9 | END mixed with pending work in the same superstep |
+| 10 | Reserved for invalid topology (compile() currently returns bool) |
 
-`sh ci/verify-native.sh` checks out the exact committed source, requires a pinned trusted compiler executable, runs `--check` on each guest, executes native `.ores` tests and compares their exact output. Missing compiler or missing executed steps fails closed. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for semantics and release gates.
+## Verification and security
 
-LangGraph concepts used for comparison are documented at https://docs.langchain.com/oss/python/langgraph/overview ; this implementation is original Oreslang code, not a Python binding.
+The native Oreslang smoke program lives in tests/smoke.ores. It exercises 46
+assertion gates: typed state and patch construction, two-node reducer merge,
+fan-in coalescing, snapshot isolation, conflicting writes, bad reducer policies,
+post-update routing, bad routes, bounded cycles, invalid graph definitions,
+duplicate patch writes, ambiguous END handling and builder immutability.
 
-## Additional native source modules (draft extension)
+Run sh ci/verify-native.sh with EXPECTED_TREE_SHA (the Git SHA-1 **tree object**,
+not the commit SHA), ORESLANG_BIN (absolute path to a trusted native compiler),
+and ORESLANG_COMPILER_SHA256 (64 hex characters) set. It rejects missing or
+mismatched tree/compiler identities, dirty files, symlinks, untracked source,
+nonzero guest execution, and incorrect guest output. Success requires the real
+guest to emit exactly SG_TYPED_SMOKE_PASS, then the harness prints SG_NATIVE_PASS.
+A 'true' shell command cannot masquerade as a passing Oreslang guest.
 
-- `src/builder.ores`: immutable batch-registration `GraphBuilder<S>`, explicit entry-point and budget, `validate()` plus `compile()` returning `BuildResult<S>`. This intentionally uses `with_nodes`/`with_edges` for whole declaration batches. A mutating or persistent single-node `add_node` has **not** yet been implemented or validated against the compiler collection API.
-- `src/patches.ores`: typed `StatePatch<P>`, keyed `StateReducer<S,P>`, and two-pass `apply_batch<S,P>`. Duplicate patch channels, missing reducers and duplicate reducer bindings fail **before** any reducer executes; successful patches reduce in authored order. One batch uses one payload type `P`. This is not yet parallel supersteps or heterogeneous field reducers.
-- Eight native guest fixtures are now listed in `ci/native-cases.txt`; none constitutes a native pass until compiler checks and executions are observed for the exact commit.
+.github/workflows/source-contract.yml is **static only**, not native guest
+acceptance. The source GitHub organization may lack executable runner capacity.
+For private mirrors: NEVER push the private source into a public repository,
+never rely on cross-organization GITHUB_TOKEN checkout, and require equality of
+the full Git tree hash and each tracked blob before claiming exact-source
+execution. Different mirror commit IDs are acceptable only when the full
+content-addressed tree identity is equal. Native acceptance requires executed
+job steps and guest output, not merely a completed Actions run.
 
-## Experimental typed superstep extension (PR #2)
+### Explicitly outstanding
 
-The separate `src/supersteps.ores` module adds a **generic** `SuperstepGraph<S>` builder/executor alongside—not in place of—the merged `sg.StateGraph<S>` v0 kernel in `src/stategraph.ores`. The two implementations have distinct APIs; no migration or runtime-parity claim is made.
+An executed Java/GraalVM source compiler run, LLVM/.NET/Forge/Wasm acceptance,
+native actor worker scheduling, cancellation, typed errors, deep snapshot
+semantics audit, durable checkpoint storage, interrupts, retries, streaming,
+dynamic Send, subgraphs, and AI provider adapters. Do not promote this draft to
+production before native guest evidence exists.
 
-- `SuperstepGraph<S>` accepts a caller-provided `copy_state: Fnc<S(S)>` which **must** deep-copy owned state. Compiler-enforced ownership/purity has not been demonstrated.
-- `StatePatch<S>` carries keyed state-transform callbacks, with declared reducer keys, exclusive-write conflict checks, and complete-superstep preflight before applying updates.
-- Multiple active nodes see snapshots of one committed state; fan-out, deduplicated fan-in, conditional allowlisted routing on candidate state, bounded cycles, and all-or-nothing **graph-state publication** are modeled.
-- Noncommutative reducer callbacks execute in deterministic authored order. Reusing a reducer key does not certify associativity, commutativity, or external side-effect rollback.
-- Branching into END while other work remains fails closed. There is no checkpoint/resume or asynchronous actor scheduling yet.
-
-### Example acceptance and verification
-
-`tests/smoke.ores` targets `src/supersteps.ores` and covers reducer fan-in, exclusive-write conflict, missing reducer, post-merge routing, unauthorized route, bounded cycle, malformed topology, duplicate patch writes, mixed END work, and frozen builder. The extra workflow `.github/workflows/source-contract.yml` is **source-only** and does not compile or execute Oreslang.
-
-`ci/verify-supersteps-native.sh` is a separate fail-closed native acceptance harness. It requires `EXPECTED_TREE_SHA` (full tree identity), `ORESLANG_BIN` (absolute trusted compiler path) and `ORESLANG_COMPILER_SHA256` (pinned compiler hash), then checks and executes `tests/smoke.ores` as a guest. A script in the repository is not evidence that it ran: native acceptance requires executed job steps, captured exit codes, exact SHA and compiler identity. No Graal, LLVM, Forge, .NET or Wasm native pass is asserted.
-
-The original `ci/verify-native.sh` and its eight v0 guest fixtures remain untouched. A future integration PR can consolidate the typed v0 and superstep implementations after real compiler/backend verification.
+References: LangGraph StateGraph and Pregel superstep execution.
