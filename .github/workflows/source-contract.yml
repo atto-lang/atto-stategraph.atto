@@ -16,14 +16,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in src/stategraph.ores tests/smoke.ores ci/verify-native.sh README.md; do
+          for file in src/supersteps.ores tests/smoke.ores ci/verify-supersteps-native.sh README.md; do
             test -s "$file"
             test ! -L "$file"
             git ls-files --error-unmatch -- "$file" >/dev/null
           done
-          grep -q 'define pub class StateGraph<S>' src/stategraph.ores
-          grep -q 'define pub class StatePatch<S>' src/stategraph.ores
-          grep -q 'branch.choose(self.copy_state(candidate))' src/stategraph.ores
+          grep -q 'define pub class SuperstepGraph<S>' src/supersteps.ores
+          grep -q 'define pub class StatePatch<S>' src/supersteps.ores
+          grep -q 'branch.choose(self.copy_state(candidate))' src/supersteps.ores
           grep -q 'SG_TYPED_SMOKE_PASS' tests/smoke.ores
           if grep -R -nE 'import +(java|javascript|python)|System\.exit|child_process|eval\(' src/; then
             echo 'Host execution dependency in native source' >&2
@@ -39,7 +39,7 @@ jobs:
           export EXPECTED_TREE_SHA="$(git rev-parse HEAD^{tree})"
           export ORESLANG_BIN="$fake"
           export ORESLANG_COMPILER_SHA256="$(sha256sum "$fake" | cut -d' ' -f1)"
-          if sh ci/verify-native.sh > /tmp/sg-fake-out 2>&1; then
+          if sh ci/verify-supersteps-native.sh > /tmp/sg-fake-out 2>&1; then
             echo 'ERROR: fake zero-output compiler falsely accepted' >&2
             exit 1
           fi
