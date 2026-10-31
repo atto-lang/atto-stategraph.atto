@@ -1,34 +1,47 @@
 name: StateGraph source-only guard
 on:
-  pull_request:
   push:
-    branches: [main]
-
+  pull_request:
 permissions:
   contents: read
-
 jobs:
-  static-source:
-    name: source only (no guest execution)
+  source-only:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Validate source tree without misreporting an Oreslang test pass
+      - name: Check tracked native source (not a guest test)
         shell: bash
         run: |
           set -euo pipefail
-          test -s src/supersteps.ores
-          test -s tests/smoke.ores
-          test -s README.md
-          grep -q 'define pub class SuperstepGraph' src/supersteps.ores
-          grep -q 'pub invoke(' src/supersteps.ores
-          grep -q 'pub routine main() -> int' tests/smoke.ores
-          if grep -R -n -E '(import +(java|python|javascript)|eval\(|System\.exit)' src/; then
-            echo 'Forbidden host dependency in native Oreslang source' >&2
+          for file in src/stategraph.ores tests/smoke.ores ci/verify-native.sh README.md; do
+            test -s "$file"
+            test ! -L "$file"
+            git ls-files --error-unmatch -- "$file" >/dev/null
+          done
+          grep -q 'define pub class StateGraph<S>' src/stategraph.ores
+          grep -q 'define pub class StatePatch<S>' src/stategraph.ores
+          grep -q 'branch.choose(self.copy_state(candidate))' src/stategraph.ores
+          grep -q 'SG_TYPED_SMOKE_PASS' tests/smoke.ores
+          if grep -R -nE 'import +(java|javascript|python)|System\.exit|child_process|eval\(' src/; then
+            echo 'Host execution dependency in native source' >&2
             exit 1
           fi
-          echo 'STATIC ONLY: compiler and behavioral smoke tests were NOT executed.'
+          echo 'SOURCE_ONLY_PASS: this does NOT establish compiler acceptance'
+      - name: Native acceptance harness must reject fake zero-output compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake="$(command -v true)"
+          test -n "$fake"
+          export EXPECTED_TREE_SHA="$(git rev-parse HEAD^{tree})"
+          export ORESLANG_BIN="$fake"
+          export ORESLANG_COMPILER_SHA256="$(sha256sum "$fake" | cut -d' ' -f1)"
+          if sh ci/verify-native.sh > /tmp/sg-fake-out 2>&1; then
+            echo 'ERROR: fake zero-output compiler falsely accepted' >&2
+            exit 1
+          fi
+          grep -q 'guest did not emit exact' /tmp/sg-fake-out
+          echo 'HARNESS_NEGATIVE_TEST_PASS: fake compiler correctly rejected'
