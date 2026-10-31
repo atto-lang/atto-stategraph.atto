@@ -1,0 +1,5 @@
+# file|exact stdout bytes (no newline)
+tests/native/conditional.ores|sg:conditional-ok
+tests/native/bounded-loop.ores|sg:bounded-loop-ok
+tests/native/invalid-graphs.ores|sg:invalid-graphs-ok
+tests/native/route-errors.ores|sg:route-errors-ok

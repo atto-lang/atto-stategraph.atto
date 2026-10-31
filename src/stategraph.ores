@@ -1,0 +1,140 @@
+// Native Oreslang StateGraph v0: deterministic, bounded, single-lane executor.
+// No host runtime, reflection, remote I/O, dynamic code execution, or checkpoint claims.
+// Callbacks must be pure and return new immutable state; enforcement is a future compiler gate.
+define module sg as
+  pub define class Node<S> as
+    pub val String id;
+    pub val Fnc<S(String, S)> apply;
+  end
+
+  pub define class Edge<S> as
+    pub val String source;
+    pub val String target;
+    pub val Fnc<bool(S)> when;
+  end
+
+  pub define class RunResult<S> as
+    pub val String status;
+    pub val S state;
+    pub val int steps;
+    pub val String cursor;
+  end
+
+  pub define class StateGraph<S> as
+    pub val List<Node<S>> nodes;
+    pub val List<Edge<S>> edges;
+    pub val int max_steps;
+
+    has_node(String id): bool {
+      for const node of self.nodes do
+        if node.id == id; do
+          return true;
+        fi
+      done
+      return false;
+    }
+
+    // Validate before invoking ANY user callbacks. Graph definitions are immutable.
+    pub validate(): String {
+      if self.max_steps <= 0 || self.max_steps > 10000; do
+        return "invalid_budget";
+      fi
+
+      let int start_edges = 0;
+      for const node of self.nodes do
+        if node.id == "" || node.id == "START" || node.id == "END"; do
+          return "reserved_node";
+        fi
+        let int count = 0;
+        for const other of self.nodes do
+          if other.id == node.id; do
+            count = count + 1;
+          fi
+        done
+        if count != 1; do
+          return "duplicate_node";
+        fi
+      done
+
+      for const edge of self.edges do
+        if edge.source == "END" || edge.target == "START"; do
+          return "reserved_edge";
+        fi
+        if edge.source == "START"; do
+          start_edges = start_edges + 1;
+        else
+          if !self.has_node(edge.source); do
+            return "unknown_source";
+          fi
+        fi
+        if edge.target != "END" && !self.has_node(edge.target); do
+          return "unknown_target";
+        fi
+      done
+      if start_edges == 0; do
+        return "missing_start";
+      fi
+      return "ok";
+    }
+
+    // START is a sentinel, not a node. END is terminal, not a callback.
+    // One unique true edge is required per reached cursor; a zero or multiple
+    // matching route fails closed. A candidate update commits only after routing.
+    pub run(S initial): RunResult<S> {
+      val String integrity = self.validate();
+      if integrity != "ok"; do
+        return new RunResult<S>("invalid_graph:" + integrity, initial, 0, "START");
+      fi
+
+      let S state = initial;
+      let String cursor = "START";
+      let int steps = 0;
+
+      while cursor != "END" {
+        let S candidate = state;
+
+        if cursor != "START"; do
+          if steps >= self.max_steps; do
+            return new RunResult<S>("step_limit", state, steps, cursor);
+          fi
+          // validate() guarantees exactly one node with this id.
+          let bool executed = false;
+          for const node of self.nodes do
+            if node.id == cursor; do
+              candidate = node.apply(cursor, state);
+              executed = true;
+            fi
+          done
+          if !executed; do
+            return new RunResult<S>("unknown_node", state, steps, cursor);
+          fi
+          steps = steps + 1;
+        fi
+
+        let int matches = 0;
+        let String next = "";
+        for const edge of self.edges do
+          if edge.source == cursor; do
+            if edge.when(candidate); do
+              matches = matches + 1;
+              next = edge.target;
+            fi
+          fi
+        done
+
+        if matches == 0; do
+          return new RunResult<S>("unmatched_edge", state, steps, cursor);
+        fi
+        if matches != 1; do
+          return new RunResult<S>("ambiguous_edge", state, steps, cursor);
+        fi
+
+        // No partial state is exposed on invalid routing.
+        state = candidate;
+        cursor = next;
+      }
+
+      return new RunResult<S>("completed", state, steps, "END");
+    }
+  end
+end
