@@ -13,18 +13,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Validate source tree without misreporting an Oreslang test pass
         shell: bash
         run: |
           set -euo pipefail
-          test -s src/stategraph.ores
+          test -s src/supersteps.ores
           test -s tests/smoke.ores
           test -s README.md
-          grep -q 'define pub class StateGraph' src/stategraph.ores
-          grep -q 'pub invoke(' src/stategraph.ores
+          grep -q 'define pub class SuperstepGraph' src/supersteps.ores
+          grep -q 'pub invoke(' src/supersteps.ores
           grep -q 'pub routine main() -> int' tests/smoke.ores
           if grep -R -n -E '(import +(java|python|javascript)|eval\(|System\.exit)' src/; then
             echo 'Forbidden host dependency in native Oreslang source' >&2

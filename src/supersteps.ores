@@ -1,0 +1,324 @@
+// Oreslang-native typed SuperstepGraph: deterministic, snapshot-isolated supersteps.
+// No foreign-language executor, FFI, reflection, implicit worker threads or GC claims.
+// S is caller-defined; copy_state MUST return an independent owned snapshot.
+// User callbacks must not mutate input snapshots or perform irreversible side effects.
+// The engine guarantees transactional GRAPH-STATE publication only, not external I/O.
+
+define pub class GraphWrite<S> as
+  pub val String key;
+  // 0 = exclusive overwrite; 1 = declared reducer update
+  pub val int mode;
+  pub val Fnc<S(S)> apply;
+end
+
+define pub class StatePatch<S> as
+  let mut Array<GraphWrite<S>> writes = new Array<GraphWrite<S>>();
+  let mut bool valid = true;
+
+  pub add_update(mut self)(String key, int mode, Fnc<S(S)> apply) -> bool {
+    if !self.valid || key == "" || (mode != 0 && mode != 1) then
+      self.valid = false;
+      return false;
+    fi
+    if self.writes.size() >= 1024 then
+      self.valid = false;
+      return false;
+    fi
+    for let i = 0; i < self.writes.size(); i++ do
+      if self.writes.get(i).key == key then
+        self.valid = false;
+        return false;
+      fi
+    done
+    self.writes.add(new GraphWrite<S>(key, mode, apply));
+    return true;
+  }
+
+  pub set(mut self)(String key, Fnc<S(S)> apply) -> bool {
+    return self.add_update(key, 0, apply);
+  }
+
+  pub reduce(mut self)(String key, Fnc<S(S)> apply) -> bool {
+    return self.add_update(key, 1, apply);
+  }
+
+  pub is_valid() -> bool { return self.valid; }
+  pub size() -> int { return self.writes.size(); }
+  pub at(int index) -> GraphWrite<S> { return self.writes.get(index); }
+end
+
+define pub class GraphNode<S> as
+  pub val String name;
+  pub val Fnc<StatePatch<S>(S)> action;
+end
+
+define pub class GraphEdge as
+  pub val String source;
+  pub val String target;
+end
+
+define pub class GraphBranch<S> as
+  pub val String source;
+  pub val Fnc<String(S)> choose;
+  pub val Array<String> allowed_targets;
+end
+
+// error_code:
+// 0=completed; 1=not compiled; 2=invalid budget; 3=invalid patch;
+// 4=undeclared reducer/mismatched operation; 5=exclusive write conflict;
+// 6=undeclared branch target; 7=step budget exhausted; 8=dead end;
+// 9=END mixed with continuing work; 10=invalid topology.
+define pub class GraphResult<S> as
+  pub val bool ok;
+  pub val int error_code;
+  pub val S state;
+  pub val int supersteps;
+  pub val Array<String> pending;
+end
+
+define pub class SuperstepGraph<S> as
+  // Required constructor argument: callback performing a DEEP copy of S.
+  pub val Fnc<S(S)> copy_state;
+  let mut Array<GraphNode<S>> nodes = new Array<GraphNode<S>>();
+  let mut Array<GraphEdge> edges = new Array<GraphEdge>();
+  let mut Array<GraphBranch<S>> branches = new Array<GraphBranch<S>>();
+  let mut Array<String> reducer_keys = new Array<String>();
+  let mut bool compiled = false;
+
+  pub has_node(String name) -> bool {
+    for let i = 0; i < self.nodes.size(); i++ do
+      if self.nodes.get(i).name == name then return true; fi
+    done
+    return false;
+  }
+
+  pub add_node(mut self)(String name, Fnc<StatePatch<S>(S)> action) -> bool {
+    if self.compiled || self.nodes.size() >= 1024 then return false; fi
+    if name == "" || name == "__start__" || name == "__end__" then return false; fi
+    if self.has_node(name) then return false; fi
+    self.nodes.add(new GraphNode<S>(name, action));
+    return true;
+  }
+
+  pub add_edge(mut self)(String source, String target) -> bool {
+    if self.compiled || self.edges.size() >= 8192 then return false; fi
+    if source == "" || target == "" || source == "__end__" || target == "__start__" then
+      return false;
+    fi
+    // This v1 engine does not accept an empty START -> END graph.
+    if source == "__start__" && target == "__end__" then return false; fi
+    for let i = 0; i < self.edges.size(); i++ do
+      if self.edges.get(i).source == source && self.edges.get(i).target == target then
+        return false;
+      fi
+    done
+    self.edges.add(new GraphEdge(source, target));
+    return true;
+  }
+
+  pub set_entry_point(mut self)(String node) -> bool {
+    return self.add_edge("__start__", node);
+  }
+
+  pub set_finish_point(mut self)(String node) -> bool {
+    return self.add_edge(node, "__end__");
+  }
+
+  pub add_conditional_edges(mut self)(
+    String source, Fnc<String(S)> choose, Array<String> targets
+  ) -> bool {
+    if self.compiled || self.branches.size() >= 1024 then return false; fi
+    if source == "" || source == "__start__" || source == "__end__" then return false; fi
+    if targets.size() == 0 || targets.size() > 1024 then return false; fi
+    for let i = 0; i < self.branches.size(); i++ do
+      if self.branches.get(i).source == source then return false; fi
+    done
+    // Copy the allowed targets before retaining them.
+    val Array<String> owned = new Array<String>();
+    for let i = 0; i < targets.size(); i++ do
+      val String target = targets.get(i);
+      if target == "" || target == "__start__" then return false; fi
+      for let j = 0; j < owned.size(); j++ do
+        if owned.get(j) == target then return false; fi
+      done
+      owned.add(target);
+    done
+    self.branches.add(new GraphBranch<S>(source, choose, owned));
+    return true;
+  }
+
+  // Reducer callbacks are supplied by each patch; this registers admission
+  // policy, NOT a proof that callbacks are associative or commutative.
+  pub add_reducer(mut self)(String key) -> bool {
+    if self.compiled || key == "" || self.reducer_keys.size() >= 1024 then return false; fi
+    if self.is_reducer(key) then return false; fi
+    self.reducer_keys.add(key);
+    return true;
+  }
+
+  pub is_reducer(String key) -> bool {
+    for let i = 0; i < self.reducer_keys.size(); i++ do
+      if self.reducer_keys.get(i) == key then return true; fi
+    done
+    return false;
+  }
+
+  pub compile(mut self) -> bool {
+    if self.compiled then return true; fi
+    if self.nodes.size() == 0 || self.edges.size() == 0 then return false; fi
+    let bool has_entry = false;
+    for let i = 0; i < self.edges.size(); i++ do
+      val GraphEdge edge = self.edges.get(i);
+      if edge.source == "__start__" then
+        has_entry = true;
+      else
+        if !self.has_node(edge.source) then return false; fi
+      fi
+      if edge.target != "__end__" && !self.has_node(edge.target) then return false; fi
+    done
+    if !has_entry then return false; fi
+    for let i = 0; i < self.branches.size(); i++ do
+      val GraphBranch<S> branch = self.branches.get(i);
+      if !self.has_node(branch.source) then return false; fi
+      for let j = 0; j < branch.allowed_targets.size(); j++ do
+        val String target = branch.allowed_targets.get(j);
+        if target != "__end__" && !self.has_node(target) then return false; fi
+      done
+    done
+    self.compiled = true;
+    return true;
+  }
+
+  pub invoke(S initial, int max_steps) -> GraphResult<S> {
+    val Array<String> entry = new Array<String>();
+    if !self.compiled then
+      return new GraphResult<S>(false, 1, self.copy_state(initial), 0, entry);
+    fi
+    if max_steps < 1 || max_steps > 100000 then
+      return new GraphResult<S>(false, 2, self.copy_state(initial), 0, entry);
+    fi
+    for let i = 0; i < self.edges.size(); i++ do
+      val GraphEdge edge = self.edges.get(i);
+      if edge.source == "__start__" then
+        let bool duplicate = false;
+        for let j = 0; j < entry.size(); j++ do
+          if entry.get(j) == edge.target then duplicate = true; fi
+        done
+        if !duplicate then entry.add(edge.target); fi
+      fi
+    done
+
+    let S current = self.copy_state(initial);
+    let Array<String> frontier = entry;
+    for let step = 0; step < max_steps; step++ do
+      // All active nodes see private copies of ONE committed state version.
+      val Array<StatePatch<S>> patches = new Array<StatePatch<S>>();
+      for let i = 0; i < frontier.size(); i++ do
+        val String name = frontier.get(i);
+        for let n = 0; n < self.nodes.size(); n++ do
+          val GraphNode<S> node = self.nodes.get(n);
+          if node.name == name then
+            val StatePatch<S> patch = node.action(self.copy_state(current));
+            if !patch.is_valid() then
+              return new GraphResult<S>(false, 3, self.copy_state(current), step, frontier);
+            fi
+            patches.add(patch);
+          fi
+        done
+      done
+
+      // Prevalidate complete write-set BEFORE applying any operations.
+      val Array<String> exclusive_keys = new Array<String>();
+      for let p = 0; p < patches.size(); p++ do
+        val StatePatch<S> patch = patches.get(p);
+        for let w = 0; w < patch.size(); w++ do
+          val GraphWrite<S> update = patch.at(w);
+          if (update.mode == 1) != self.is_reducer(update.key) then
+            return new GraphResult<S>(false, 4, self.copy_state(current), step, frontier);
+          fi
+          if update.mode == 0 then
+            for let k = 0; k < exclusive_keys.size(); k++ do
+              if exclusive_keys.get(k) == update.key then
+                return new GraphResult<S>(false, 5, self.copy_state(current), step, frontier);
+              fi
+            done
+            exclusive_keys.add(update.key);
+          fi
+        done
+      done
+
+      // Candidate is independent of committed state.
+      let S candidate = self.copy_state(current);
+      for let p = 0; p < patches.size(); p++ do
+        val StatePatch<S> patch = patches.get(p);
+        for let w = 0; w < patch.size(); w++ do
+          val GraphWrite<S> update = patch.at(w);
+          candidate = update.apply(candidate);
+        done
+      done
+
+      val Array<String> next_frontier = new Array<String>();
+      let bool reached_end = false;
+      for let i = 0; i < frontier.size(); i++ do
+        val String source = frontier.get(i);
+        let bool routed = false;
+        for let e = 0; e < self.edges.size(); e++ do
+          val GraphEdge edge = self.edges.get(e);
+          if edge.source == source then
+            routed = true;
+            if edge.target == "__end__" then
+              reached_end = true;
+            else
+              let bool present = false;
+              for let j = 0; j < next_frontier.size(); j++ do
+                if next_frontier.get(j) == edge.target then present = true; fi
+              done
+              if !present then next_frontier.add(edge.target); fi
+            fi
+          fi
+        done
+        for let b = 0; b < self.branches.size(); b++ do
+          val GraphBranch<S> branch = self.branches.get(b);
+          if branch.source == source then
+            routed = true;
+            val String chosen = branch.choose(self.copy_state(candidate));
+            let bool allowed = false;
+            for let j = 0; j < branch.allowed_targets.size(); j++ do
+              if chosen == branch.allowed_targets.get(j) then allowed = true; fi
+            done
+            if !allowed then
+              return new GraphResult<S>(false, 6, self.copy_state(current), step, frontier);
+            fi
+            if chosen == "__end__" then
+              reached_end = true;
+            else
+              let bool present = false;
+              for let j = 0; j < next_frontier.size(); j++ do
+                if next_frontier.get(j) == chosen then present = true; fi
+              done
+              if !present then next_frontier.add(chosen); fi
+            fi
+          fi
+        done
+        if !routed then
+          return new GraphResult<S>(false, 8, self.copy_state(current), step, frontier);
+        fi
+      done
+      // Disallow completion of one branch while other work is still live.
+      // Later versions may adopt explicit LangGraph-like pending-task semantics.
+      if reached_end && next_frontier.size() > 0 then
+        return new GraphResult<S>(false, 9, self.copy_state(current), step, frontier);
+      fi
+      // Publish only after ALL patches and routing decisions validate.
+      current = candidate;
+      if reached_end then
+        return new GraphResult<S>(true, 0, self.copy_state(current), step + 1, next_frontier);
+      fi
+      if next_frontier.size() == 0 then
+        return new GraphResult<S>(false, 8, self.copy_state(current), step + 1, next_frontier);
+      fi
+      frontier = next_frontier;
+    done
+    return new GraphResult<S>(false, 7, self.copy_state(current), max_steps, frontier);
+  }
+end

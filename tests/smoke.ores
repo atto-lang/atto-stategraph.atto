@@ -1,5 +1,5 @@
 // Exact native guest acceptance: return 0 for success, unique nonzero failure.
-import class StateGraph, StatePatch, GraphResult from "../src/stategraph";
+import class SuperstepGraph, StatePatch, GraphResult from "../src/supersteps";
 
 define class CounterState as
   pub val int count;
@@ -91,7 +91,7 @@ fnc duplicate_patch(CounterState s) -> StatePatch<CounterState> {
 
 pub routine main() -> int {
   // Fan-out, reducer merge, fan-in coalescing and snapshot isolation.
-  val StateGraph<CounterState> graph = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> graph = new SuperstepGraph<CounterState>(copy_state);
   if !graph.add_node("a", plus_two) then return 1; fi
   if !graph.add_node("b", plus_three) then return 2; fi
   if !graph.add_node("join", join) then return 3; fi
@@ -110,7 +110,7 @@ pub routine main() -> int {
   if sum.state.observed != 15 then return 15; fi
 
   // Multiple exclusive writers in one step must not publish state.
-  val StateGraph<CounterState> conflict = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> conflict = new SuperstepGraph<CounterState>(copy_state);
   conflict.add_node("a", one);
   conflict.add_node("b", two);
   conflict.set_entry_point("a");
@@ -124,7 +124,7 @@ pub routine main() -> int {
   if conflict_result.state.count != 10 then return 19; fi
 
   // Declared reducer is mandatory; a wrong mode is rejected before commit.
-  val StateGraph<CounterState> missing_reducer = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> missing_reducer = new SuperstepGraph<CounterState>(copy_state);
   missing_reducer.add_node("a", plus_two);
   missing_reducer.set_entry_point("a");
   missing_reducer.set_finish_point("a");
@@ -134,7 +134,7 @@ pub routine main() -> int {
   if wrong_mode.state.count != 10 then return 22; fi
 
   // Conditional routing sees state after patch application.
-  val StateGraph<CounterState> branch = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> branch = new SuperstepGraph<CounterState>(copy_state);
   branch.add_node("entry", direct);
   branch.add_node("left", mark_left);
   branch.set_entry_point("entry");
@@ -149,7 +149,7 @@ pub routine main() -> int {
   if routed.supersteps != 2 then return 26; fi
 
   // Unauthorized destinations reject the whole pending step.
-  val StateGraph<CounterState> bad_route = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> bad_route = new SuperstepGraph<CounterState>(copy_state);
   bad_route.add_node("entry", direct);
   bad_route.add_node("left", mark_left);
   bad_route.set_entry_point("entry");
@@ -163,7 +163,7 @@ pub routine main() -> int {
   if denied.state.direction != 0 then return 29; fi
 
   // Bound a cycle; return the next frontier and committed step count.
-  val StateGraph<CounterState> cyclic = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> cyclic = new SuperstepGraph<CounterState>(copy_state);
   cyclic.add_node("spin", plus_two);
   cyclic.add_reducer("count");
   cyclic.set_entry_point("spin");
@@ -175,12 +175,12 @@ pub routine main() -> int {
   if bounded.pending.size() != 1 then return 33; fi
 
   // Reject dangling nodes and duplicate patch writes.
-  val StateGraph<CounterState> malformed = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> malformed = new SuperstepGraph<CounterState>(copy_state);
   malformed.add_node("a", one);
   malformed.set_entry_point("a");
   malformed.add_edge("a", "ghost");
   if malformed.compile() then return 34; fi
-  val StateGraph<CounterState> duplicate = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> duplicate = new SuperstepGraph<CounterState>(copy_state);
   duplicate.add_node("a", duplicate_patch);
   duplicate.set_entry_point("a");
   duplicate.set_finish_point("a");
@@ -190,7 +190,7 @@ pub routine main() -> int {
   if dup_result.state.key != 0 then return 37; fi
 
   // END plus another frontier in the same superstep must fail closed.
-  val StateGraph<CounterState> mixed = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> mixed = new SuperstepGraph<CounterState>(copy_state);
   mixed.add_node("a", one);
   mixed.add_node("b", two);
   mixed.set_entry_point("a");
@@ -205,7 +205,7 @@ pub routine main() -> int {
   // A complete graph cannot be mutated and duplicate entries are disallowed.
   if graph.add_reducer("other") then return 41; fi
   if graph.set_entry_point("a") then return 42; fi
-  val StateGraph<CounterState> bad_edges = new StateGraph<CounterState>(copy_state);
+  val SuperstepGraph<CounterState> bad_edges = new SuperstepGraph<CounterState>(copy_state);
   if bad_edges.add_edge("__start__", "__end__") then return 43; fi
   if !bad_edges.add_node("a", one) then return 44; fi
   if !bad_edges.set_entry_point("a") then return 45; fi
