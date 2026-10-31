@@ -73,7 +73,7 @@ pub routine main() -> int {
   if parallel.add_node("late", plus_two) then return 11; fi
   val GraphState initial = new GraphState();
   initial.put("count", 10);
-  val GraphResult sum = parallel.invoke(initial, 8);
+  val GraphResult sum = parallel.invoke(initial.snapshot(), 8);
   if !sum.ok then return 12; fi
   if sum.supersteps != 2 then return 13; fi
   if sum.state.get("count").unwrap() != 15 then return 14; fi
@@ -89,7 +89,7 @@ pub routine main() -> int {
   conflict.set_finish_point("a");
   conflict.set_finish_point("b");
   if !conflict.compile() then return 17; fi
-  val GraphResult rejected = conflict.invoke(initial, 8);
+  val GraphResult rejected = conflict.invoke(initial.snapshot(), 8);
   if rejected.ok || rejected.error_code != 5 then return 18; fi
   if rejected.state.get("key").is_some() then return 19; fi
   if rejected.state.get("count").unwrap() != 10 then return 20; fi
@@ -107,7 +107,6 @@ pub routine main() -> int {
   branching.set_finish_point("left");
   branching.set_finish_point("right");
   if !branching.compile() then return 22; fi
-  allowed.add("ghost");
   val GraphResult routed = branching.invoke(new GraphState(), 6);
   if !routed.ok || !routed.state.has("reached_left") then return 23; fi
   if routed.state.has("reached_right") then return 24; fi
@@ -133,7 +132,7 @@ pub routine main() -> int {
   cyclic.set_entry_point("spin");
   cyclic.add_edge("spin", "spin");
   if !cyclic.compile() then return 28; fi
-  val GraphResult bounded = cyclic.invoke(initial, 3);
+  val GraphResult bounded = cyclic.invoke(initial.snapshot(), 3);
   if bounded.ok || bounded.error_code != 7 then return 29; fi
   if bounded.supersteps != 3 then return 30; fi
   if bounded.state.get("count").unwrap() != 16 then return 31; fi
