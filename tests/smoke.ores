@@ -1,0 +1,158 @@
+// Native Oreslang StateGraph behavioral smoke test.
+// 0 is pass; nonzero is the index of the failed assertion.
+import class StateGraph, GraphState, StatePatch, GraphResult from "../src/stategraph";
+
+fnc plus_two(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.add("count", 2);
+  return patch;
+}
+fnc plus_three(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.add("count", 3);
+  return patch;
+}
+fnc save_sum(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("observed", state.get("count").unwrap());
+  return patch;
+}
+fnc set_one(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("key", 1);
+  return patch;
+}
+fnc set_two(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("key", 2);
+  return patch;
+}
+fnc turn_up(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("direction", 1);
+  return patch;
+}
+fnc route(GraphState state) -> String {
+  if state.get("direction").unwrap() == 1 then return "left"; fi
+  return "right";
+}
+fnc bad_route(GraphState state) -> String {
+  return "ghost";
+}
+fnc mark_left(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("reached_left", 1);
+  return patch;
+}
+fnc mark_right(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("reached_right", 1);
+  return patch;
+}
+fnc invalid_patch(GraphState state) -> StatePatch {
+  val StatePatch patch = new StatePatch();
+  patch.set("duplicated", 1);
+  patch.set("duplicated", 2);
+  return patch;
+}
+
+pub routine main() -> int {
+  // Two active nodes start from count=10. The reducer merges +2 and +3.
+  // Join executes once, at next superstep, and sees the committed 15.
+  val StateGraph parallel = new StateGraph();
+  if !parallel.add_node("a", plus_two) then return 1; fi
+  if !parallel.add_node("b", plus_three) then return 2; fi
+  if !parallel.add_node("join", save_sum) then return 3; fi
+  if !parallel.add_sum_reducer("count") then return 4; fi
+  if !parallel.set_entry_point("a") then return 5; fi
+  if !parallel.set_entry_point("b") then return 6; fi
+  if !parallel.add_edge("a", "join") then return 7; fi
+  if !parallel.add_edge("b", "join") then return 8; fi
+  if !parallel.set_finish_point("join") then return 9; fi
+  if !parallel.compile() then return 10; fi
+  if parallel.add_node("late", plus_two) then return 11; fi
+  val GraphState initial = new GraphState();
+  initial.put("count", 10);
+  val GraphResult sum = parallel.invoke(initial, 8);
+  if !sum.ok then return 12; fi
+  if sum.supersteps != 2 then return 13; fi
+  if sum.state.get("count").unwrap() != 15 then return 14; fi
+  if sum.state.get("observed").unwrap() != 15 then return 15; fi
+  if initial.get("count").unwrap() != 10 then return 16; fi
+
+  // Two overwrites of the same key are rejected atomically.
+  val StateGraph conflict = new StateGraph();
+  conflict.add_node("a", set_one);
+  conflict.add_node("b", set_two);
+  conflict.set_entry_point("a");
+  conflict.set_entry_point("b");
+  conflict.set_finish_point("a");
+  conflict.set_finish_point("b");
+  if !conflict.compile() then return 17; fi
+  val GraphResult rejected = conflict.invoke(initial, 8);
+  if rejected.ok || rejected.error_code != 5 then return 18; fi
+  if rejected.state.get("key").is_some() then return 19; fi
+  if rejected.state.get("count").unwrap() != 10 then return 20; fi
+
+  // Router reads the new state, not the old one.
+  val StateGraph branching = new StateGraph();
+  branching.add_node("entry", turn_up);
+  branching.add_node("left", mark_left);
+  branching.add_node("right", mark_right);
+  branching.set_entry_point("entry");
+  val Array<String> allowed = new Array<String>();
+  allowed.add("left");
+  allowed.add("right");
+  if !branching.add_conditional_edges("entry", route, allowed) then return 21; fi
+  branching.set_finish_point("left");
+  branching.set_finish_point("right");
+  if !branching.compile() then return 22; fi
+  allowed.add("ghost");
+  val GraphResult routed = branching.invoke(new GraphState(), 6);
+  if !routed.ok || !routed.state.has("reached_left") then return 23; fi
+  if routed.state.has("reached_right") then return 24; fi
+
+  // Unauthorized route must not commit the patch from the same step.
+  val StateGraph bad = new StateGraph();
+  bad.add_node("entry", turn_up);
+  bad.add_node("left", mark_left);
+  bad.set_entry_point("entry");
+  val Array<String> only_left = new Array<String>();
+  only_left.add("left");
+  bad.add_conditional_edges("entry", bad_route, only_left);
+  bad.set_finish_point("left");
+  if !bad.compile() then return 25; fi
+  val GraphResult invalid = bad.invoke(new GraphState(), 6);
+  if invalid.ok || invalid.error_code != 6 then return 26; fi
+  if invalid.state.has("direction") then return 27; fi
+
+  // A cycle cannot outrun the explicit step budget.
+  val StateGraph cyclic = new StateGraph();
+  cyclic.add_node("spin", plus_two);
+  cyclic.add_sum_reducer("count");
+  cyclic.set_entry_point("spin");
+  cyclic.add_edge("spin", "spin");
+  if !cyclic.compile() then return 28; fi
+  val GraphResult bounded = cyclic.invoke(initial, 3);
+  if bounded.ok || bounded.error_code != 7 then return 29; fi
+  if bounded.supersteps != 3 then return 30; fi
+  if bounded.state.get("count").unwrap() != 16 then return 31; fi
+  if bounded.pending.size() != 1 then return 32; fi
+
+  // Unresolved edge must fail compile.
+  val StateGraph missing = new StateGraph();
+  missing.add_node("present", plus_two);
+  missing.set_entry_point("present");
+  missing.add_edge("present", "absent");
+  if missing.compile() then return 33; fi
+
+  // Two writes to the same key inside one patch invalidate it.
+  val StateGraph malformed = new StateGraph();
+  malformed.add_node("bad", invalid_patch);
+  malformed.set_entry_point("bad");
+  malformed.set_finish_point("bad");
+  if !malformed.compile() then return 34; fi
+  val GraphResult invalid_writes = malformed.invoke(new GraphState(), 4);
+  if invalid_writes.ok || invalid_writes.error_code != 3 then return 35; fi
+  return 0;
+}
