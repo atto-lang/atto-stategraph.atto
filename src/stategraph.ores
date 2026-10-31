@@ -77,29 +77,29 @@ define pub class StatePatch as
 end
 
 define pub class GraphNode as
-  val String name;
-  val Fnc<StatePatch(GraphState)> action;
+  pub val String name;
+  pub val Fnc<StatePatch(GraphState)> action;
 end
 
 define pub class GraphEdge as
-  val String source;
-  val String target;
+  pub val String source;
+  pub val String target;
 end
 
 define pub class GraphBranch as
-  val String source;
-  val Fnc<String(GraphState)> choose;
-  val Array<String> allowed_targets;
+  pub val String source;
+  pub val Fnc<String(GraphState)> choose;
+  pub val Array<String> allowed_targets;
 end
 
 // error_code: 0=success, 1=uncompiled, 2=bad budget, 3=bad patch,
 // 4=wrong reducer, 5=write conflict, 6=bad route, 7=step cap, 8=dead end.
 define pub class GraphResult as
-  val bool ok;
-  val int error_code;
-  val GraphState state;
-  val int supersteps;
-  val Array<String> pending;
+  pub val bool ok;
+  pub val int error_code;
+  pub val GraphState state;
+  pub val int supersteps;
+  pub val Array<String> pending;
 end
 
 define pub class StateGraph as
