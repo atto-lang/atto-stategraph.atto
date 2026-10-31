@@ -203,14 +203,6 @@ define pub class StateGraph as
     return true;
   }
 
-  pub append_unique(Array<String> current, String name) -> bool {
-    for let i = 0; i < current.size(); i++ do
-      if current.get(i) == name then return false; fi
-    done
-    current.add(name);
-    return true;
-  }
-
   pub invoke(GraphState initial, int max_steps) -> GraphResult {
     val Array<String> entry = new Array<String>();
     if !self.compiled then return new GraphResult(false, 1, initial.snapshot(), 0, entry); fi
@@ -220,7 +212,11 @@ define pub class StateGraph as
     for let i = 0; i < self.edges.size(); i++ do
       val GraphEdge edge = self.edges.get(i);
       if edge.source == "__start__" && edge.target != "__end__" then
-        self.append_unique(entry, edge.target);
+        let bool already_entered = false;
+        for let i2 = 0; i2 < entry.size(); i2++ do
+          if entry.get(i2) == edge.target then already_entered = true; fi
+        done
+        if !already_entered then entry.add(edge.target); fi
       fi
     done
     let GraphState current = initial.snapshot();
@@ -293,7 +289,11 @@ define pub class StateGraph as
             if edge.target == "__end__" then
               reached_end = true;
             else
-              self.append_unique(next_frontier, edge.target);
+              let bool already_scheduled = false;
+              for let i2 = 0; i2 < next_frontier.size(); i2++ do
+                if next_frontier.get(i2) == edge.target then already_scheduled = true; fi
+              done
+              if !already_scheduled then next_frontier.add(edge.target); fi
             fi
           fi
         done
@@ -311,7 +311,11 @@ define pub class StateGraph as
             if chosen == "__end__" then
               reached_end = true;
             else
-              self.append_unique(next_frontier, chosen);
+              let bool already_routed = false;
+              for let i2 = 0; i2 < next_frontier.size(); i2++ do
+                if next_frontier.get(i2) == chosen then already_routed = true; fi
+              done
+              if !already_routed then next_frontier.add(chosen); fi
             fi
           fi
         done
