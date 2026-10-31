@@ -1,157 +1,214 @@
-// Native Oreslang StateGraph behavioral smoke test.
-// 0 is pass; nonzero is the index of the failed assertion.
-import class StateGraph, GraphState, StatePatch, GraphResult from "../src/stategraph";
+// Exact native guest acceptance: return 0 for success, unique nonzero failure.
+import class StateGraph, StatePatch, GraphResult from "../src/stategraph";
 
-fnc plus_two(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.add("count", 2);
-  return patch;
+define class CounterState as
+  pub val int count;
+  pub val int observed;
+  pub val int key;
+  pub val int direction;
+  pub val int left;
+end
+
+fnc empty() -> CounterState {
+  return new CounterState(0, 0, 0, 0, 0);
 }
-fnc plus_three(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.add("count", 3);
-  return patch;
+fnc initial() -> CounterState {
+  return new CounterState(10, 0, 0, 0, 0);
 }
-fnc save_sum(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("observed", state.get("count").unwrap());
-  return patch;
+fnc copy_state(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.observed, s.key, s.direction, s.left);
 }
-fnc set_one(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("key", 1);
-  return patch;
+fnc add_two(CounterState s) -> CounterState {
+  return new CounterState(s.count + 2, s.observed, s.key, s.direction, s.left);
 }
-fnc set_two(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("key", 2);
-  return patch;
+fnc add_three(CounterState s) -> CounterState {
+  return new CounterState(s.count + 3, s.observed, s.key, s.direction, s.left);
 }
-fnc turn_up(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("direction", 1);
-  return patch;
+fnc observe_count(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.count, s.key, s.direction, s.left);
 }
-fnc route(GraphState state) -> String {
-  if state.get("direction").unwrap() == 1 then return "left"; fi
-  return "right";
+fnc write_one(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.observed, 1, s.direction, s.left);
 }
-fnc bad_route(GraphState state) -> String {
-  return "ghost";
+fnc write_two(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.observed, 2, s.direction, s.left);
 }
-fnc mark_left(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("reached_left", 1);
-  return patch;
+fnc set_direction(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.observed, s.key, 1, s.left);
 }
-fnc mark_right(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("reached_right", 1);
-  return patch;
+fnc set_left(CounterState s) -> CounterState {
+  return new CounterState(s.count, s.observed, s.key, s.direction, 1);
 }
-fnc invalid_patch(GraphState state) -> StatePatch {
-  val StatePatch patch = new StatePatch();
-  patch.set("duplicated", 1);
-  patch.set("duplicated", 2);
-  return patch;
+fnc route_left(CounterState s) -> String {
+  if s.direction == 1 then return "left"; fi
+  return "__end__";
+}
+fnc route_unknown(CounterState s) -> String {
+  return "unknown";
+}
+
+fnc plus_two(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.reduce("count", add_two);
+  return p;
+}
+fnc plus_three(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.reduce("count", add_three);
+  return p;
+}
+fnc join(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("observed", observe_count);
+  return p;
+}
+fnc one(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("key", write_one);
+  return p;
+}
+fnc two(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("key", write_two);
+  return p;
+}
+fnc direct(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("direction", set_direction);
+  return p;
+}
+fnc mark_left(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("left", set_left);
+  return p;
+}
+fnc duplicate_patch(CounterState s) -> StatePatch<CounterState> {
+  val StatePatch<CounterState> p = new StatePatch<CounterState>();
+  p.set("key", write_one);
+  p.set("key", write_two);
+  return p;
 }
 
 pub routine main() -> int {
-  // Two active nodes start from count=10. The reducer merges +2 and +3.
-  // Join executes once, at next superstep, and sees the committed 15.
-  val StateGraph parallel = new StateGraph();
-  if !parallel.add_node("a", plus_two) then return 1; fi
-  if !parallel.add_node("b", plus_three) then return 2; fi
-  if !parallel.add_node("join", save_sum) then return 3; fi
-  if !parallel.add_sum_reducer("count") then return 4; fi
-  if !parallel.set_entry_point("a") then return 5; fi
-  if !parallel.set_entry_point("b") then return 6; fi
-  if !parallel.add_edge("a", "join") then return 7; fi
-  if !parallel.add_edge("b", "join") then return 8; fi
-  if !parallel.set_finish_point("join") then return 9; fi
-  if !parallel.compile() then return 10; fi
-  if parallel.add_node("late", plus_two) then return 11; fi
-  val GraphState initial = new GraphState();
-  initial.put("count", 10);
-  val GraphResult sum = parallel.invoke(initial.snapshot(), 8);
-  if !sum.ok then return 12; fi
+  // Fan-out, reducer merge, fan-in coalescing and snapshot isolation.
+  val StateGraph<CounterState> graph = new StateGraph<CounterState>(copy_state);
+  if !graph.add_node("a", plus_two) then return 1; fi
+  if !graph.add_node("b", plus_three) then return 2; fi
+  if !graph.add_node("join", join) then return 3; fi
+  if !graph.add_reducer("count") then return 4; fi
+  if !graph.set_entry_point("a") then return 5; fi
+  if !graph.set_entry_point("b") then return 6; fi
+  if !graph.add_edge("a", "join") then return 7; fi
+  if !graph.add_edge("b", "join") then return 8; fi
+  if !graph.set_finish_point("join") then return 9; fi
+  if !graph.compile() then return 10; fi
+  if graph.add_node("late", plus_two) then return 11; fi
+  val GraphResult<CounterState> sum = graph.invoke(initial(), 8);
+  if !sum.ok || sum.error_code != 0 then return 12; fi
   if sum.supersteps != 2 then return 13; fi
-  if sum.state.get("count").unwrap() != 15 then return 14; fi
-  if sum.state.get("observed").unwrap() != 15 then return 15; fi
-  if initial.get("count").unwrap() != 10 then return 16; fi
+  if sum.state.count != 15 then return 14; fi
+  if sum.state.observed != 15 then return 15; fi
 
-  // Two overwrites of the same key are rejected atomically.
-  val StateGraph conflict = new StateGraph();
-  conflict.add_node("a", set_one);
-  conflict.add_node("b", set_two);
+  // Multiple exclusive writers in one step must not publish state.
+  val StateGraph<CounterState> conflict = new StateGraph<CounterState>(copy_state);
+  conflict.add_node("a", one);
+  conflict.add_node("b", two);
   conflict.set_entry_point("a");
   conflict.set_entry_point("b");
   conflict.set_finish_point("a");
   conflict.set_finish_point("b");
-  if !conflict.compile() then return 17; fi
-  val GraphResult rejected = conflict.invoke(initial.snapshot(), 8);
-  if rejected.ok || rejected.error_code != 5 then return 18; fi
-  if rejected.state.get("key").is_some() then return 19; fi
-  if rejected.state.get("count").unwrap() != 10 then return 20; fi
+  if !conflict.compile() then return 16; fi
+  val GraphResult<CounterState> conflict_result = conflict.invoke(initial(), 8);
+  if conflict_result.ok || conflict_result.error_code != 5 then return 17; fi
+  if conflict_result.state.key != 0 then return 18; fi
+  if conflict_result.state.count != 10 then return 19; fi
 
-  // Router reads the new state, not the old one.
-  val StateGraph branching = new StateGraph();
-  branching.add_node("entry", turn_up);
-  branching.add_node("left", mark_left);
-  branching.add_node("right", mark_right);
-  branching.set_entry_point("entry");
-  val Array<String> allowed = new Array<String>();
-  allowed.add("left");
-  allowed.add("right");
-  if !branching.add_conditional_edges("entry", route, allowed) then return 21; fi
-  branching.set_finish_point("left");
-  branching.set_finish_point("right");
-  if !branching.compile() then return 22; fi
-  val GraphResult routed = branching.invoke(new GraphState(), 6);
-  if !routed.ok || !routed.state.has("reached_left") then return 23; fi
-  if routed.state.has("reached_right") then return 24; fi
+  // Declared reducer is mandatory; a wrong mode is rejected before commit.
+  val StateGraph<CounterState> missing_reducer = new StateGraph<CounterState>(copy_state);
+  missing_reducer.add_node("a", plus_two);
+  missing_reducer.set_entry_point("a");
+  missing_reducer.set_finish_point("a");
+  if !missing_reducer.compile() then return 20; fi
+  val GraphResult<CounterState> wrong_mode = missing_reducer.invoke(initial(), 3);
+  if wrong_mode.ok || wrong_mode.error_code != 4 then return 21; fi
+  if wrong_mode.state.count != 10 then return 22; fi
 
-  // Unauthorized route must not commit the patch from the same step.
-  val StateGraph bad = new StateGraph();
-  bad.add_node("entry", turn_up);
-  bad.add_node("left", mark_left);
-  bad.set_entry_point("entry");
+  // Conditional routing sees state after patch application.
+  val StateGraph<CounterState> branch = new StateGraph<CounterState>(copy_state);
+  branch.add_node("entry", direct);
+  branch.add_node("left", mark_left);
+  branch.set_entry_point("entry");
+  val Array<String> choices = new Array<String>();
+  choices.add("left");
+  choices.add("__end__");
+  if !branch.add_conditional_edges("entry", route_left, choices) then return 23; fi
+  branch.set_finish_point("left");
+  if !branch.compile() then return 24; fi
+  val GraphResult<CounterState> routed = branch.invoke(empty(), 5);
+  if !routed.ok || routed.state.left != 1 then return 25; fi
+  if routed.supersteps != 2 then return 26; fi
+
+  // Unauthorized destinations reject the whole pending step.
+  val StateGraph<CounterState> bad_route = new StateGraph<CounterState>(copy_state);
+  bad_route.add_node("entry", direct);
+  bad_route.add_node("left", mark_left);
+  bad_route.set_entry_point("entry");
   val Array<String> only_left = new Array<String>();
   only_left.add("left");
-  bad.add_conditional_edges("entry", bad_route, only_left);
-  bad.set_finish_point("left");
-  if !bad.compile() then return 25; fi
-  val GraphResult invalid = bad.invoke(new GraphState(), 6);
-  if invalid.ok || invalid.error_code != 6 then return 26; fi
-  if invalid.state.has("direction") then return 27; fi
+  bad_route.add_conditional_edges("entry", route_unknown, only_left);
+  bad_route.set_finish_point("left");
+  if !bad_route.compile() then return 27; fi
+  val GraphResult<CounterState> denied = bad_route.invoke(empty(), 5);
+  if denied.ok || denied.error_code != 6 then return 28; fi
+  if denied.state.direction != 0 then return 29; fi
 
-  // A cycle cannot outrun the explicit step budget.
-  val StateGraph cyclic = new StateGraph();
+  // Bound a cycle; return the next frontier and committed step count.
+  val StateGraph<CounterState> cyclic = new StateGraph<CounterState>(copy_state);
   cyclic.add_node("spin", plus_two);
-  cyclic.add_sum_reducer("count");
+  cyclic.add_reducer("count");
   cyclic.set_entry_point("spin");
   cyclic.add_edge("spin", "spin");
-  if !cyclic.compile() then return 28; fi
-  val GraphResult bounded = cyclic.invoke(initial.snapshot(), 3);
-  if bounded.ok || bounded.error_code != 7 then return 29; fi
-  if bounded.supersteps != 3 then return 30; fi
-  if bounded.state.get("count").unwrap() != 16 then return 31; fi
-  if bounded.pending.size() != 1 then return 32; fi
+  if !cyclic.compile() then return 30; fi
+  val GraphResult<CounterState> bounded = cyclic.invoke(initial(), 3);
+  if bounded.ok || bounded.error_code != 7 then return 31; fi
+  if bounded.supersteps != 3 || bounded.state.count != 16 then return 32; fi
+  if bounded.pending.size() != 1 then return 33; fi
 
-  // Unresolved edge must fail compile.
-  val StateGraph missing = new StateGraph();
-  missing.add_node("present", plus_two);
-  missing.set_entry_point("present");
-  missing.add_edge("present", "absent");
-  if missing.compile() then return 33; fi
+  // Reject dangling nodes and duplicate patch writes.
+  val StateGraph<CounterState> malformed = new StateGraph<CounterState>(copy_state);
+  malformed.add_node("a", one);
+  malformed.set_entry_point("a");
+  malformed.add_edge("a", "ghost");
+  if malformed.compile() then return 34; fi
+  val StateGraph<CounterState> duplicate = new StateGraph<CounterState>(copy_state);
+  duplicate.add_node("a", duplicate_patch);
+  duplicate.set_entry_point("a");
+  duplicate.set_finish_point("a");
+  if !duplicate.compile() then return 35; fi
+  val GraphResult<CounterState> dup_result = duplicate.invoke(empty(), 2);
+  if dup_result.ok || dup_result.error_code != 3 then return 36; fi
+  if dup_result.state.key != 0 then return 37; fi
 
-  // Two writes to the same key inside one patch invalidate it.
-  val StateGraph malformed = new StateGraph();
-  malformed.add_node("bad", invalid_patch);
-  malformed.set_entry_point("bad");
-  malformed.set_finish_point("bad");
-  if !malformed.compile() then return 34; fi
-  val GraphResult invalid_writes = malformed.invoke(new GraphState(), 4);
-  if invalid_writes.ok || invalid_writes.error_code != 3 then return 35; fi
+  // END plus another frontier in the same superstep must fail closed.
+  val StateGraph<CounterState> mixed = new StateGraph<CounterState>(copy_state);
+  mixed.add_node("a", one);
+  mixed.add_node("b", two);
+  mixed.set_entry_point("a");
+  mixed.add_edge("a", "b");
+  mixed.set_finish_point("a");
+  mixed.set_finish_point("b");
+  if !mixed.compile() then return 38; fi
+  val GraphResult<CounterState> end_mixed = mixed.invoke(empty(), 4);
+  if end_mixed.ok || end_mixed.error_code != 9 then return 39; fi
+  if end_mixed.state.key != 0 then return 40; fi
+
+  // A complete graph cannot be mutated and duplicate entries are disallowed.
+  if graph.add_reducer("other") then return 41; fi
+  if graph.set_entry_point("a") then return 42; fi
+  val StateGraph<CounterState> bad_edges = new StateGraph<CounterState>(copy_state);
+  if bad_edges.add_edge("__start__", "__end__") then return 43; fi
+  if !bad_edges.add_node("a", one) then return 44; fi
+  if !bad_edges.set_entry_point("a") then return 45; fi
+  if bad_edges.set_entry_point("a") then return 46; fi
   return 0;
 }
