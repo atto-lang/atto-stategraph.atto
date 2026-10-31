@@ -210,5 +210,6 @@ pub routine main() -> int {
   if !bad_edges.add_node("a", one) then return 44; fi
   if !bad_edges.set_entry_point("a") then return 45; fi
   if bad_edges.set_entry_point("a") then return 46; fi
+  stdio.stdout.write("SG_TYPED_SMOKE_PASS");
   return 0;
 }
