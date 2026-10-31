@@ -10,7 +10,7 @@ define module sg as
   pub define class Edge<S> as
     pub val String source;
     pub val String target;
-    pub val Fnc<bool(S)> when;
+    pub val Fnc<bool(S)> predicate;
   end
 
   pub define class RunResult<S> as
@@ -115,7 +115,7 @@ define module sg as
         let String next = "";
         for const edge of self.edges do
           if edge.source == cursor; do
-            if edge.when(candidate); do
+            if edge.predicate(candidate); do
               matches = matches + 1;
               next = edge.target;
             fi
