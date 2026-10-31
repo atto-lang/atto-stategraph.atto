@@ -126,6 +126,8 @@ define pub class StateGraph as
 
   pub add_edge(mut self)(String source, String target) -> bool {
     if self.compiled || self.edges.size() >= 8192 then return false; fi
+    // Empty graphs are not supported by this v1 executor.
+    if source == "__start__" && target == "__end__" then return false; fi
     if source == "" || target == "" || source == "__end__" || target == "__start__" then return false; fi
     for let i = 0; i < self.edges.size(); i++ do
       if self.edges.get(i).source == source && self.edges.get(i).target == target then
