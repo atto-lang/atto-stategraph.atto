@@ -34,8 +34,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fake="$(command -v true)"
-          test -n "$fake"
+          fake="/usr/bin/true"
+          test -x "$fake"
           export EXPECTED_TREE_SHA="$(git rev-parse HEAD^{tree})"
           export ORESLANG_BIN="$fake"
           export ORESLANG_COMPILER_SHA256="$(sha256sum "$fake" | cut -d' ' -f1)"
