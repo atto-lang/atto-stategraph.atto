@@ -36,7 +36,12 @@ limiter="$(command -v timeout || command -v gtimeout || true)"
 printf 'SG_NATIVE_BEGIN tree=%s compiler_sha256=%s\n' "$tree" "$actual"
 "$limiter" --kill-after=3s 90s "$binary" --check tests/smoke.ores ||
   die "compiler check failed"
-"$limiter" --kill-after=3s 90s "$binary" tests/smoke.ores ||
+output="$(mktemp)" || die "cannot create output capture"
+trap 'rm -f "$output"' EXIT HUP INT TERM
+"$limiter" --kill-after=3s 90s "$binary" tests/smoke.ores > "$output" ||
   die "guest program failed"
+# An executable that simply exits zero MUST NOT satisfy native acceptance.
+printf 'SG_TYPED_SMOKE_PASS' | cmp -s - "$output" ||
+  die "guest did not emit exact SG_TYPED_SMOKE_PASS marker"
 printf 'SG_NATIVE_PASS tree=%s compiler_sha256=%s smoke_blob=%s\n' \
   "$tree" "$actual" "$(git rev-parse HEAD:tests/smoke.ores)"
