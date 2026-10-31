@@ -1,13 +1,14 @@
 # Native Oreslang StateGraph (sg)
 
 **Status: experimental draft; guest compiler execution not yet verified.**
-This is the consolidation of the typed execution kernel in PR #1 and the
-snapshot/patch/superstep semantics in PR #2. The entire graph engine is authored
+This is the staged integration after PR #1 merged into main: the typed serial
+StateGraph<S> API remains source-compatible, while PR #2 adds a typed
+SuperstepGraph<S> with snapshot/patch/superstep semantics. The entire graph engine is authored
 in Oreslang, not Python, JavaScript, Java, or an FFI orchestration layer.
 
 ## Typed API
 
-The central type is StateGraph<S>, with a caller-owned application state S.
+The merged v0 API is sg.StateGraph<S> in src/stategraph.ores. This additive, draft execution engine is SuperstepGraph<S> in src/supersteps.ores, with caller-owned application state S. Both are typed, but the two execution APIs are intentionally separate until compiler acceptance and a compatibility migration.
 A required Fnc<S(S)> copy_state function must return a fully independent state
 snapshot; use immutable value objects or deep-copy all mutable nested members.
 The engine cannot statically enforce that user-supplied copy callbacks are pure.
@@ -28,7 +29,7 @@ GraphWrite<S> entries with keyed typed Fnc<S(S)> update functions.
 ### Example (Oreslang)
 
 ~~~ores
-import class StateGraph, StatePatch, GraphResult from "./src/stategraph";
+import class SuperstepGraph, StatePatch, GraphResult from "./src/supersteps";
 
 define class Count as
   pub val int value;
@@ -47,7 +48,7 @@ fnc step(Count state) -> StatePatch<Count> {
 }
 
 pub routine main() -> int {
-  val StateGraph<Count> graph = new StateGraph<Count>(copy_count);
+  val SuperstepGraph<Count> graph = new SuperstepGraph<Count>(copy_count);
   graph.add_node("step", step);
   graph.add_reducer("value");
   graph.set_entry_point("step");
@@ -98,18 +99,18 @@ patch engine. This is a sequential prototype (not actor-parallel or durable).
 
 ## Verification and security
 
-The native Oreslang smoke program lives in tests/smoke.ores. It exercises 46
+The additive superstep Oreslang smoke program lives in tests/smoke.ores. The merged v0 serial kernel retains its original tests/native fixtures and ci/verify-native.sh. It exercises 46
 assertion gates: typed state and patch construction, two-node reducer merge,
 fan-in coalescing, snapshot isolation, conflicting writes, bad reducer policies,
 post-update routing, bad routes, bounded cycles, invalid graph definitions,
 duplicate patch writes, ambiguous END handling and builder immutability.
 
-Run sh ci/verify-native.sh with EXPECTED_TREE_SHA (the Git SHA-1 **tree object**,
+Run sh ci/verify-supersteps-native.sh with EXPECTED_TREE_SHA (the Git SHA-1 **tree object**,
 not the commit SHA), ORESLANG_BIN (absolute path to a trusted native compiler),
 and ORESLANG_COMPILER_SHA256 (64 hex characters) set. It rejects missing or
 mismatched tree/compiler identities, dirty files, symlinks, untracked source,
 nonzero guest execution, and incorrect guest output. Success requires the real
-guest to emit exactly SG_TYPED_SMOKE_PASS, then the harness prints SG_NATIVE_PASS.
+guest to emit exactly SG_TYPED_SMOKE_PASS, then the harness prints SG_SUPERSTEPS_NATIVE_PASS.
 A 'true' shell command cannot masquerade as a passing Oreslang guest.
 
 .github/workflows/source-contract.yml is **static only**, not native guest
