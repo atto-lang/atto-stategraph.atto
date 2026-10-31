@@ -33,6 +33,13 @@ limiter="$(command -v timeout || command -v gtimeout || true)"
 tmp="$(mktemp -d)" || die "cannot create private temp dir"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 chmod 700 "$tmp"
+# Require real executable self-identification rather than inferring
+# compiler capability from its pathname or wrapper script name.
+"$limiter" --kill-after=3s 15s "$ORESLANG_BIN" --build-info >"$tmp/info" 2>"$tmp/info.err" ||
+  die "compiler --build-info did not execute"
+[ "$(wc -c < "$tmp/info" | tr -d ' ')" -le 2048 ] || die "oversized compiler build-info"
+grep -Fq '"build_mode":' "$tmp/info" || die "compiler lacks build_mode attestation"
+grep -Fq '"guest_execution":' "$tmp/info" || die "compiler lacks guest_execution attestation"
 count=0
 printf 'SG_NATIVE_BEGIN source_sha=%s compiler_sha256=%s\n' "$head" "$digest"
 while IFS='|' read -r path expected || [ -n "$path" ]; do
@@ -55,5 +62,5 @@ while IFS='|' read -r path expected || [ -n "$path" ]; do
   printf 'SG_NATIVE_CASE_PASS path=%s blob=%s\n' "$path" "$(git rev-parse "HEAD:$path")"
 done <ci/native-cases.txt
 tracked="$(git ls-files 'tests/native/*.ores' | wc -l | tr -d ' ')"
-[ "$count" -eq 4 ] && [ "$tracked" -eq "$count" ] || die "manifest/source coverage mismatch"
+[ "$count" -eq 8 ] && [ "$tracked" -eq "$count" ] || die "manifest/source coverage mismatch"
 printf 'SG_NATIVE_PASS count=%s source_sha=%s compiler_sha256=%s\n' "$count" "$head" "$digest"

@@ -56,6 +56,19 @@ define module sg as
         fi
       done
 
+      // Reject incomplete transition tables before any node callback runs.
+      for const node of self.nodes do
+        let int outgoing = 0;
+        for const edge of self.edges do
+          if edge.source == node.id; do
+            outgoing = outgoing + 1;
+          fi
+        done
+        if outgoing == 0; do
+          return "missing_outgoing";
+        fi
+      done
+
       for const edge of self.edges do
         if edge.source == "END" || edge.target == "START"; do
           return "reserved_edge";

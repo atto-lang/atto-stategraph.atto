@@ -1,0 +1,34 @@
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc plus(int current, int change): int { return current + change; }
+fnc twice(int current, int change): int { return current * change; }
+
+pub routine main(): void {
+  val List<StateReducer<int, int>> reducers = arr[
+    new StateReducer<int, int>("add", plus),
+    new StateReducer<int, int>("multiply", twice)
+  ];
+  val List<StatePatch<int>> writes = arr[
+    new StatePatch<int>("add", 3),
+    new StatePatch<int>("multiply", 4)
+  ];
+  val PatchBatchResult<int> ok = apply_batch<int, int>(2, writes, reducers);
+  val PatchBatchResult<int> duplicate = apply_batch<int, int>(
+    2,
+    arr[new StatePatch<int>("add", 3), new StatePatch<int>("add", 4)],
+    reducers
+  );
+  val PatchBatchResult<int> unknown = apply_batch<int, int>(
+    2, arr[new StatePatch<int>("missing", 7)], reducers
+  );
+  if ok.status == "applied" && ok.state == 20 && ok.applied == 2 &&
+     duplicate.status == "write_conflict" && duplicate.state == 2 &&
+     duplicate.applied == 0 && unknown.status == "unknown_channel" &&
+     unknown.state == 2 && unknown.applied == 0; do
+    stdio.stdout.write("sg:patch-batch-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:patch-batch-fail");
+  return;
+}

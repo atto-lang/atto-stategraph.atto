@@ -3,3 +3,7 @@ tests/native/conditional.ores|sg:conditional-ok
 tests/native/bounded-loop.ores|sg:bounded-loop-ok
 tests/native/invalid-graphs.ores|sg:invalid-graphs-ok
 tests/native/route-errors.ores|sg:route-errors-ok
+tests/native/builder-compile.ores|sg:builder-ok
+tests/native/patch-batch.ores|sg:patch-batch-ok
+tests/native/invalid-boundaries.ores|sg:invalid-boundaries-ok
+tests/native/missing-outgoing.ores|sg:missing-outgoing-ok

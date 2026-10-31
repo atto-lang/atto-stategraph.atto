@@ -1,0 +1,79 @@
+// Immutable, batch-registered graph builder. No mutable List append
+// operations are assumed: declaration batches are supplied explicitly.
+// compile() validates and freezes the assembled graph by value.
+import class StateGraph, Node, Edge from "./stategraph";
+
+define module graphbuilder as
+  pub define class BuildResult<S> as
+    pub val String status;
+    pub val StateGraph<S> graph;
+  end
+
+  pub define class GraphBuilder<S> as
+    pub val List<Node<S>> nodes;
+    pub val List<Edge<S>> edges;
+    pub val String entry_point;
+    pub val int max_steps;
+
+    // Batch registration; replace a complete immutable registry.
+    // This is not a mutating add_node/edge API.
+    pub with_nodes(List<Node<S>> nodes): GraphBuilder<S> {
+      return new GraphBuilder<S>(nodes, self.edges, self.entry_point, self.max_steps);
+    }
+
+    pub with_edges(List<Edge<S>> edges): GraphBuilder<S> {
+      return new GraphBuilder<S>(self.nodes, edges, self.entry_point, self.max_steps);
+    }
+
+    pub set_entry_point(String entry_point): GraphBuilder<S> {
+      return new GraphBuilder<S>(self.nodes, self.edges, entry_point, self.max_steps);
+    }
+
+    pub set_step_budget(int max_steps): GraphBuilder<S> {
+      return new GraphBuilder<S>(self.nodes, self.edges, self.entry_point, max_steps);
+    }
+
+    pub validate(): String {
+      val StateGraph<S> graph = new StateGraph<S>(self.nodes, self.edges, self.max_steps);
+      val String basic = graph.validate();
+      if basic != "ok"; do
+        return basic;
+      fi
+      if self.entry_point == "" || self.entry_point == "START" ||
+         self.entry_point == "END"; do
+        return "invalid_entry";
+      fi
+      let bool found = false;
+      for const node of self.nodes do
+        if node.id == self.entry_point; do
+          found = true;
+        fi
+      done
+      if !found; do
+        return "missing_entry";
+      fi
+      let int start_count = 0;
+      for const edge of self.edges do
+        if edge.source == "START"; do
+          if edge.target != self.entry_point; do
+            return "entry_mismatch";
+          fi
+          start_count = start_count + 1;
+        fi
+      done
+      if start_count != 1; do
+        return "ambiguous_entry";
+      fi
+      return "ok";
+    }
+
+    pub compile(): BuildResult<S> {
+      val StateGraph<S> graph = new StateGraph<S>(self.nodes, self.edges, self.max_steps);
+      val String status = self.validate();
+      if status != "ok"; do
+        return new BuildResult<S>("invalid_graph:" + status, graph);
+      fi
+      return new BuildResult<S>("compiled", graph);
+    }
+  end
+end

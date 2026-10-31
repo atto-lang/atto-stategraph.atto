@@ -34,3 +34,11 @@ Graph definitions should be versioned and pinned per invocation. Never resume a 
 ## CI evidence rules
 
 Source lint is only source lint. Native acceptance requires: exact branch-head SHA, executable and digest attestation, `--check`, observed native execution of every listed `.ores` case, full step/job evidence. GitHub Actions jobs with zero steps are runner admission failures, not test results. No private-source mirroring to another organization without explicit authorization; any authorized mirror must verify exact source Git tree identity. Default CI never falls back to Python, JavaScript, or stubs.
+
+## Builder and typed state patches (draft extension)
+
+`GraphBuilder<S>` is functional/immutable. For portability until a compiler-proven list construction API exists, the public surface is `with_nodes(List<Node<S>>)`, `with_edges(List<Edge<S>>)`, `set_entry_point(String)`, and `set_step_budget(int)`. `compile()` returns a `BuildResult<S>` with status; callers MUST check `status == "compiled"` before running `result.graph`. The result always carries its graph value; a failed build value is not an admitted execution plan. The builder checks a single START entry edge pointing to the declared entry node.
+
+`StatePatch<P>` carries a typed payload P and channel string; reducers `StateReducer<S,P>` are explicitly bound to channels. `apply_batch<S,P>` validates every write before calling any reducer. Duplicate writes to one channel always yield `write_conflict`; unknown channels and duplicate reducers fail closed. After preflight, reducers are pure functions `S,P -> S`; results are combined in declared write order. There is no automatic field reflection, implicit conversion, or mutable sharing. Reducer callbacks can still throw or have out-of-band effects; this API offers neither transactional rollback nor effect isolation.
+
+Open blockers: real compiler support for `List`/generic Oreslang classes and import references, whole-file compilation, native test receipts for all eight cases, proper single-node add API, per-channel heterogeneous reducers, and proper actor-supervised work. These remain unverified while Actions jobs are zero-step.

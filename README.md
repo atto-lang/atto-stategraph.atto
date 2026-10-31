@@ -49,3 +49,9 @@ Each `StateGraph<S>` definition is immutable. User callbacks are responsible for
 `sh ci/verify-native.sh` checks out the exact committed source, requires a pinned trusted compiler executable, runs `--check` on each guest, executes native `.ores` tests and compares their exact output. Missing compiler or missing executed steps fails closed. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for semantics and release gates.
 
 LangGraph concepts used for comparison are documented at https://docs.langchain.com/oss/python/langgraph/overview ; this implementation is original Oreslang code, not a Python binding.
+
+## Additional native source modules (draft extension)
+
+- `src/builder.ores`: immutable batch-registration `GraphBuilder<S>`, explicit entry-point and budget, `validate()` plus `compile()` returning `BuildResult<S>`. This intentionally uses `with_nodes`/`with_edges` for whole declaration batches. A mutating or persistent single-node `add_node` has **not** yet been implemented or validated against the compiler collection API.
+- `src/patches.ores`: typed `StatePatch<P>`, keyed `StateReducer<S,P>`, and two-pass `apply_batch<S,P>`. Duplicate patch channels, missing reducers and duplicate reducer bindings fail **before** any reducer executes; successful patches reduce in authored order. One batch uses one payload type `P`. This is not yet parallel supersteps or heterogeneous field reducers.
+- Eight native guest fixtures are now listed in `ci/native-cases.txt`; none constitutes a native pass until compiler checks and executions are observed for the exact commit.
