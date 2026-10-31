@@ -1,0 +1,330 @@
+// Native Oreslang StateGraph v1: integer-valued state channels.
+// No host graph execution. Each superstep is snapshot-isolated.
+
+define pub class GraphState as
+  let mut Array<String> keys = new Array<String>();
+  let mut Array<int> values = new Array<int>();
+
+  pub has(String key) -> bool {
+    for let i = 0; i < self.keys.size(); i++ do
+      if self.keys.get(i) == key then return true; fi
+    done
+    return false;
+  }
+
+  pub get(String key) -> Option<int> {
+    for let i = 0; i < self.keys.size(); i++ do
+      if self.keys.get(i) == key then return Some(self.values.get(i)); fi
+    done
+    return None;
+  }
+
+  pub put(mut self)(String key, int value) -> bool {
+    if key == "" then return false; fi
+    for let i = 0; i < self.keys.size(); i++ do
+      if self.keys.get(i) == key then
+        self.values.set(i, value);
+        return true;
+      fi
+    done
+    self.keys.add(key);
+    self.values.add(value);
+    return true;
+  }
+
+  pub snapshot() -> GraphState {
+    val GraphState out = new GraphState();
+    for let i = 0; i < self.keys.size(); i++ do
+      out.put(self.keys.get(i), self.values.get(i));
+    done
+    return out;
+  }
+
+  pub size() -> int { return self.keys.size(); }
+end
+
+define pub class StatePatch as
+  let mut Array<String> keys = new Array<String>();
+  let mut Array<int> values = new Array<int>();
+  // 0=overwrite (single writer), 1=add (registered sum reducer).
+  let mut Array<int> modes = new Array<int>();
+  let mut bool valid = true;
+
+  pub add_write(mut self)(String key, int value, int mode) -> bool {
+    if key == "" || (mode != 0 && mode != 1) then
+      self.valid = false;
+      return false;
+    fi
+    for let i = 0; i < self.keys.size(); i++ do
+      if self.keys.get(i) == key then
+        self.valid = false;
+        return false;
+      fi
+    done
+    self.keys.add(key);
+    self.values.add(value);
+    self.modes.add(mode);
+    return true;
+  }
+
+  pub set(mut self)(String key, int value) -> bool { return self.add_write(key, value, 0); }
+  pub add(mut self)(String key, int delta) -> bool { return self.add_write(key, delta, 1); }
+  pub is_valid() -> bool { return self.valid; }
+  pub size() -> int { return self.keys.size(); }
+  pub key_at(int index) -> String { return self.keys.get(index); }
+  pub value_at(int index) -> int { return self.values.get(index); }
+  pub mode_at(int index) -> int { return self.modes.get(index); }
+end
+
+define pub class GraphNode as
+  val String name;
+  val Fnc<StatePatch(GraphState)> action;
+end
+
+define pub class GraphEdge as
+  val String source;
+  val String target;
+end
+
+define pub class GraphBranch as
+  val String source;
+  val Fnc<String(GraphState)> choose;
+  val Array<String> allowed_targets;
+end
+
+// error_code: 0=success, 1=uncompiled, 2=bad budget, 3=bad patch,
+// 4=wrong reducer, 5=write conflict, 6=bad route, 7=step cap, 8=dead end.
+define pub class GraphResult as
+  val bool ok;
+  val int error_code;
+  val GraphState state;
+  val int supersteps;
+  val Array<String> pending;
+end
+
+define pub class StateGraph as
+  let mut Array<GraphNode> nodes = new Array<GraphNode>();
+  let mut Array<GraphEdge> edges = new Array<GraphEdge>();
+  let mut Array<GraphBranch> branches = new Array<GraphBranch>();
+  let mut Array<String> sum_keys = new Array<String>();
+  let mut bool compiled = false;
+
+  pub has_node(String name) -> bool {
+    for let i = 0; i < self.nodes.size(); i++ do
+      if self.nodes.get(i).name == name then return true; fi
+    done
+    return false;
+  }
+
+  pub add_node(mut self)(String name, Fnc<StatePatch(GraphState)> action) -> bool {
+    if self.compiled || self.nodes.size() >= 1024 then return false; fi
+    if name == "" || name == "__start__" || name == "__end__" then return false; fi
+    if self.has_node(name) then return false; fi
+    self.nodes.add(new GraphNode(name, action));
+    return true;
+  }
+
+  pub add_edge(mut self)(String source, String target) -> bool {
+    if self.compiled || self.edges.size() >= 8192 then return false; fi
+    if source == "" || target == "" || source == "__end__" || target == "__start__" then return false; fi
+    for let i = 0; i < self.edges.size(); i++ do
+      if self.edges.get(i).source == source && self.edges.get(i).target == target then
+        return false;
+      fi
+    done
+    self.edges.add(new GraphEdge(source, target));
+    return true;
+  }
+
+  pub set_entry_point(mut self)(String node) -> bool {
+    return self.add_edge("__start__", node);
+  }
+
+  pub set_finish_point(mut self)(String node) -> bool {
+    return self.add_edge(node, "__end__");
+  }
+
+  pub add_conditional_edges(mut self)(String source, Fnc<String(GraphState)> choose, Array<String> targets) -> bool {
+    if self.compiled || self.branches.size() >= 1024 then return false; fi
+    if source == "" || source == "__start__" || source == "__end__" then return false; fi
+    if targets.size() == 0 || targets.size() > 1024 then return false; fi
+    val Array<String> owned = new Array<String>();
+    for let i = 0; i < targets.size(); i++ do
+      val String target = targets.get(i);
+      if target == "" || target == "__start__" then return false; fi
+      for let j = 0; j < owned.size(); j++ do
+        if owned.get(j) == target then return false; fi
+      done
+      owned.add(target);
+    done
+    self.branches.add(new GraphBranch(source, choose, owned));
+    return true;
+  }
+
+  pub add_sum_reducer(mut self)(String key) -> bool {
+    if self.compiled || key == "" || self.sum_keys.size() >= 1024 then return false; fi
+    if self.is_sum_key(key) then return false; fi
+    self.sum_keys.add(key);
+    return true;
+  }
+
+  pub is_sum_key(String key) -> bool {
+    for let i = 0; i < self.sum_keys.size(); i++ do
+      if self.sum_keys.get(i) == key then return true; fi
+    done
+    return false;
+  }
+
+  pub compile(mut self) -> bool {
+    if self.compiled then return true; fi
+    if self.nodes.size() == 0 || self.edges.size() == 0 then return false; fi
+    let bool has_entry = false;
+    for let i = 0; i < self.edges.size(); i++ do
+      val GraphEdge edge = self.edges.get(i);
+      if edge.source == "__start__" then
+        has_entry = true;
+      else
+        if !self.has_node(edge.source) then return false; fi
+      fi
+      if edge.target != "__end__" && !self.has_node(edge.target) then return false; fi
+    done
+    if !has_entry then return false; fi
+    for let i = 0; i < self.branches.size(); i++ do
+      val GraphBranch branch = self.branches.get(i);
+      if !self.has_node(branch.source) then return false; fi
+      for let j = 0; j < branch.allowed_targets.size(); j++ do
+        val String target = branch.allowed_targets.get(j);
+        if target != "__end__" && !self.has_node(target) then return false; fi
+      done
+    done
+    self.compiled = true;
+    return true;
+  }
+
+  pub append_unique(Array<String> current, String name) -> bool {
+    for let i = 0; i < current.size(); i++ do
+      if current.get(i) == name then return false; fi
+    done
+    current.add(name);
+    return true;
+  }
+
+  pub invoke(GraphState initial, int max_steps) -> GraphResult {
+    val Array<String> entry = new Array<String>();
+    if !self.compiled then return new GraphResult(false, 1, initial.snapshot(), 0, entry); fi
+    if max_steps < 1 || max_steps > 100000 then
+      return new GraphResult(false, 2, initial.snapshot(), 0, entry);
+    fi
+    for let i = 0; i < self.edges.size(); i++ do
+      val GraphEdge edge = self.edges.get(i);
+      if edge.source == "__start__" && edge.target != "__end__" then
+        self.append_unique(entry, edge.target);
+      fi
+    done
+    let GraphState current = initial.snapshot();
+    let Array<String> frontier = entry;
+    for let step = 0; step < max_steps; step++ do
+      // Isolated read snapshot for each node in the active frontier.
+      val Array<StatePatch> patches = new Array<StatePatch>();
+      for let i = 0; i < frontier.size(); i++ do
+        val String name = frontier.get(i);
+        for let n = 0; n < self.nodes.size(); n++ do
+          val GraphNode node = self.nodes.get(n);
+          if node.name == name then
+            val StatePatch patch = node.action(current.snapshot());
+            if !patch.is_valid() then
+              return new GraphResult(false, 3, current.snapshot(), step, frontier);
+            fi
+            patches.add(patch);
+          fi
+        done
+      done
+
+      // Reject the ENTIRE superstep if writes conflict or violate reducer policy.
+      val Array<String> single_writers = new Array<String>();
+      for let p = 0; p < patches.size(); p++ do
+        val StatePatch patch = patches.get(p);
+        for let w = 0; w < patch.size(); w++ do
+          val String key = patch.key_at(w);
+          val int mode = patch.mode_at(w);
+          if (mode == 1) != self.is_sum_key(key) then
+            return new GraphResult(false, 4, current.snapshot(), step, frontier);
+          fi
+          if mode == 0 then
+            for let seen = 0; seen < single_writers.size(); seen++ do
+              if single_writers.get(seen) == key then
+                return new GraphResult(false, 5, current.snapshot(), step, frontier);
+              fi
+            done
+            single_writers.add(key);
+          fi
+        done
+      done
+
+      let GraphState merged = current.snapshot();
+      for let p = 0; p < patches.size(); p++ do
+        val StatePatch patch = patches.get(p);
+        for let w = 0; w < patch.size(); w++ do
+          val String key = patch.key_at(w);
+          val int value = patch.value_at(w);
+          if patch.mode_at(w) == 1 then
+            val Option<int> prior = merged.get(key);
+            if prior.is_some() then
+              merged.put(key, prior.unwrap() + value);
+            else
+              merged.put(key, value);
+            fi
+          else
+            merged.put(key, value);
+          fi
+        done
+      done
+
+      // Conditional edges inspect POST-MERGE state, not the initial snapshot.
+      val Array<String> next_frontier = new Array<String>();
+      let bool reached_end = false;
+      for let i = 0; i < frontier.size(); i++ do
+        val String source = frontier.get(i);
+        for let e = 0; e < self.edges.size(); e++ do
+          val GraphEdge edge = self.edges.get(e);
+          if edge.source == source then
+            if edge.target == "__end__" then
+              reached_end = true;
+            else
+              self.append_unique(next_frontier, edge.target);
+            fi
+          fi
+        done
+        for let b = 0; b < self.branches.size(); b++ do
+          val GraphBranch branch = self.branches.get(b);
+          if branch.source == source then
+            val String chosen = branch.choose(merged.snapshot());
+            let bool allowed = false;
+            for let j = 0; j < branch.allowed_targets.size(); j++ do
+              if chosen == branch.allowed_targets.get(j) then allowed = true; fi
+            done
+            if !allowed then
+              return new GraphResult(false, 6, current.snapshot(), step, frontier);
+            fi
+            if chosen == "__end__" then
+              reached_end = true;
+            else
+              self.append_unique(next_frontier, chosen);
+            fi
+          fi
+        done
+      done
+
+      current = merged;
+      if next_frontier.size() == 0 then
+        if reached_end then
+          return new GraphResult(true, 0, current.snapshot(), step + 1, next_frontier);
+        fi
+        return new GraphResult(false, 8, current.snapshot(), step + 1, next_frontier);
+      fi
+      frontier = next_frontier;
+    done
+    // The next frontier is returned for inspection; resume API is future work.
+    return new GraphResult(false, 7, current.snapshot(), max_steps, frontier);
+  }
+end
