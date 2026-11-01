@@ -1,0 +1,2 @@
+// Stage-0 scalar intersection: actual guest result must be 42.
+fnc main():int{return (6+1)*6;}

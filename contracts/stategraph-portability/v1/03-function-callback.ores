@@ -1,0 +1,12 @@
+// First-class callback typed Fnc and eager invocation.
+fnc plus_one(int value): int {
+  return value + 1;
+}
+
+fnc invoke(Fnc<int(int)> callback, int value): int {
+  return callback(value);
+}
+
+pub fnc main(): int {
+  return invoke(plus_one, 41);
+}

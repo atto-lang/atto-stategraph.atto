@@ -1,0 +1,6 @@
+// Project-root/relative import and cross-file namespace.
+import module graph_support from "./graph_support";
+
+pub fnc main(): int {
+  return graph_support.step(41);
+}

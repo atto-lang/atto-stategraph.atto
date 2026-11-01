@@ -1,0 +1,6 @@
+// Supporting module for the portable cross-file import probe.
+define module graph_support as
+  pub fnc step(int value): int {
+    return value + 1;
+  }
+end

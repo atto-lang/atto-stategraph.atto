@@ -1,0 +1,8 @@
+// Bounded frontier/fan-in storage; no reflection or implicit conversion.
+pub fnc main(): int {
+  let mut Array<int> frontier = new Array<int>();
+  frontier.add(40);
+  frontier.add(2);
+  if frontier.size() != 2 then return 1; fi
+  return frontier.get(0) + frontier.get(1);
+}

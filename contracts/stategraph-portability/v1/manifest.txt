@@ -1,0 +1,11 @@
+# Canonical StateGraph portable source probes v1. No source-only checks are compiler evidence.
+# id|filename|semantic_feature|expected_guest_output_or_numeric_result|canonical_git_blob
+scalar|00-scalar-entry.ores|checked_integer_arithmetic|42|aa013d2c9f0197691031c9502f36b96a1af4c3f9
+module|01-module-call.ores|namespace_and_typed_call|42|03d2ffc4a16bf4b418fff0849c7e8ceb8c024a93
+generic|02-generic-state.ores|generic_nominal_immutable_state|42|c3a67b837a73f427a6157c446cc6e3989e9a66da
+callback|03-function-callback.ores|first_class_typed_callback|42|d12aa72c06307fe5b48be94ff6d3ce00cf2f3cdb
+array|04-bounded-array.ores|bounded_mutable_frontier|42|29c6820335437d1cc5ac872b396f091eb9a10878
+result|05-result-boundary.ores|typed_result_and_error_branch|42|866d23ca5d191532f5f6ff6f2d420308f945556c
+import|06-import-module.ores|cross_file_module_resolution|42|0ffac2d7033480a1df03e5f8c3be885c842685bb
+actor|07-actor-owned.ores|isolated_actor_critical_state|SG_PORTABLE_ACTOR_PASS|df47074eace7b24c505b4e0d07649e6b7543e782
+superstep|08-superstep-types.ores|generic_patch_and_callback|42|92101411f863129842adc1c8ea2d45e75f575d32
