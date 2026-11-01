@@ -131,3 +131,11 @@ dynamic Send, subgraphs, and AI provider adapters. Do not promote this draft to
 production before native guest evidence exists.
 
 References: LangGraph StateGraph and Pregel superstep execution.
+
+## Additional hardening (review branch)
+
+`SuperstepGraph<S>.topology_status()` now diagnoses incomplete/unreachable graph topology without executing user callbacks. Compile rejects missing routes, accidental mixing of regular and conditional routing, and orphan nodes; parallel regular edges remain supported. See `docs/IMPLEMENTATION.md` for the numeric diagnostic contract.
+
+The superstep native acceptance manifest now contains **four** Oreslang guest programs: `tests/smoke.ores` plus `tests/topology.ores`, `tests/patch-policy.ores`, and `tests/limits.ores`. Each has a distinct, exact stdout marker and nonzero failure exit. This is additional test *source*, not native execution evidence.
+
+The hardened full-tree source check rejects modifications, ignored/untracked content, symlinks, tracked-mode mismatches and Git blob mismatches. The source-only integrity suite has six negative cases. CI must separately establish executed steps and genuine native guest outputs on both Java/Graal and LLVM; zero-step runner failures remain admission failures.

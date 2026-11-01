@@ -1,0 +1,51 @@
+// Resource limits, non-compiled invocations, and bounded cycles.
+import class SuperstepGraph, StatePatch, GraphResult from "../src/supersteps";
+
+define class State as
+  pub val int count;
+end
+fnc clone(State s) -> State { return new State(s.count); }
+fnc step(State s) -> State { return new State(s.count + 1); }
+fnc increment(State s) -> StatePatch<State> {
+  val StatePatch<State> p = new StatePatch<State>();
+  p.set("count", step);
+  return p;
+}
+fnc unknown(State s) -> String { return "unauthorized"; }
+
+pub routine main() -> int {
+  val SuperstepGraph<State> g = new SuperstepGraph<State>(clone);
+  val GraphResult<State> before = g.invoke(new State(10), 1);
+  if before.ok || before.error_code != 1 || before.state.count != 10 then
+    return 1;
+  fi
+  g.add_node("spin", increment);
+  g.set_entry_point("spin");
+  g.add_edge("spin", "spin");
+  if !g.compile() then return 2; fi
+  val GraphResult<State> zero = g.invoke(new State(10), 0);
+  if zero.ok || zero.error_code != 2 then return 3; fi
+  val GraphResult<State> negative = g.invoke(new State(10), -1);
+  if negative.ok || negative.error_code != 2 then return 4; fi
+  val GraphResult<State> large = g.invoke(new State(10), 100001);
+  if large.ok || large.error_code != 2 then return 5; fi
+  val GraphResult<State> bounded = g.invoke(new State(10), 2);
+  if bounded.ok || bounded.error_code != 7 then return 6; fi
+  if bounded.supersteps != 2 || bounded.state.count != 12 then return 7; fi
+  if bounded.pending.size() != 1 || bounded.pending.get(0) != "spin" then return 8; fi
+
+  val SuperstepGraph<State> route = new SuperstepGraph<State>(clone);
+  route.add_node("entry", increment);
+  route.add_node("good", increment);
+  route.set_entry_point("entry");
+  val Array<String> destinations = new Array<String>();
+  destinations.add("good");
+  route.add_conditional_edges("entry", unknown, destinations);
+  route.set_finish_point("good");
+  if !route.compile() then return 9; fi
+  val GraphResult<State> rejected = route.invoke(new State(10), 3);
+  if rejected.ok || rejected.error_code != 6 then return 10; fi
+  if rejected.state.count != 10 || rejected.supersteps != 0 then return 11; fi
+  stdio.stdout.write("SG_LIMITS_PASS");
+  return 0;
+}

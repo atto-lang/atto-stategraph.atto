@@ -42,3 +42,17 @@ Source lint is only source lint. Native acceptance requires: exact branch-head S
 `StatePatch<P>` carries a typed payload P and channel string; reducers `StateReducer<S,P>` are explicitly bound to channels. `apply_batch<S,P>` validates every write before calling any reducer. Duplicate writes to one channel always yield `write_conflict`; unknown channels and duplicate reducers fail closed. After preflight, reducers are pure functions `S,P -> S`; results are combined in declared write order. There is no automatic field reflection, implicit conversion, or mutable sharing. Reducer callbacks can still throw or have out-of-band effects; this API offers neither transactional rollback nor effect isolation.
 
 Open blockers: real compiler support for `List`/generic Oreslang classes and import references, whole-file compilation, native test receipts for all eight cases, proper single-node add API, per-channel heterogeneous reducers, and proper actor-supervised work. These remain unverified while Actions jobs are zero-step.
+
+## Superstep compile hardening (review branch)
+
+The additive `SuperstepGraph<S>` now exposes `topology_status(): int` to classify deterministic, callback-free graph validation. Statuses: 0 valid; 1 empty declarations; 2 unknown edge endpoint; 3 missing START; 4 invalid branch; 5 node with no outgoing routes; 6 mixed unconditional and conditional transitions from one node; 7 unreachable registered node. `compile()` uses this analysis and freezes the graph only after validation succeeds. Reachability treats every allowlisted branch destination as potentially reachable; it does not execute branch selectors or prove progress/termination.
+
+An active node may emit multiple unconditional edges for fan-out; a conditional branch selects exactly one allowlisted target. Combining unconditional edges with a conditional branch at the same node is rejected, to avoid accidentally dispatching both. This is a deliberate tightening of the experimental superstep API; it does not change the original `sg.StateGraph<S>` serial kernel.
+
+The new guest fixtures in `tests/topology.ores`, `tests/patch-policy.ores` and `tests/limits.ores` cover topology diagnostics, reducer write-order/conflict failures, and budgets/rollback. The native harness checks **four** programs (including the previous smoke), each with exact stdout and nonzero exit-on-failure. Source-only CI exercises a separate six-case integrity negative suite. No acceptance should be claimed for any guest fixture until Java/Graal and LLVM compile and run it.
+
+## Full physical-source and compiler evidence
+
+`ci/verify-exact-tree.sh` verifies the pinned Git tree and optional commit SHA; rejects changed/index-staged/untracked/ignored files, tracked symlinks, unsafe paths/modes, and per-file Git blob mismatches. `ci/test-tree-integrity.sh` tests negative cases in an isolated throwaway Git repository; it is not a guest test. The native superstep harness additionally checks pinned compiler SHA256, bounded `--build-info`, then bounded native `--check` and execution for all four test files. The GitHub workflow checks out the exact event head and reports the tree. Private exact-tree mirrors still require independent explicit authorization before copying source; the script alone does not confer authorization or prove the authenticity of an arbitrary compiler binary.
+
+No claim of durable checkpoints, actor-parallel scheduling, enforceable callback purity, or effect rollback is made.

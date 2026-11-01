@@ -14,6 +14,8 @@ if [ -n "${EXPECTED_SOURCE_SHA:-}" ] && [ "$head" != "$EXPECTED_SOURCE_SHA" ]; t
 fi
 [ -z "$(git status --porcelain --untracked-files=normal -- src/ tests/native/ ci/native-cases.txt)" ] ||
   die "dirty source tree"
+EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')" sh ci/verify-exact-tree.sh ||
+  die "full-tree source integrity failed"
 sh ci/audit-source.sh
 case "${ORESLANG_BIN:-}" in /*) ;; *) die "set absolute ORESLANG_BIN";; esac
 [ -x "$ORESLANG_BIN" ] && [ -f "$ORESLANG_BIN" ] && [ ! -L "$ORESLANG_BIN" ] ||

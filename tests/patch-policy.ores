@@ -1,0 +1,97 @@
+// Validate patch poisoning and deterministic reducer write order.
+import class SuperstepGraph, StatePatch, GraphResult from "../src/supersteps";
+
+define class Counters as
+  pub val int count;
+  pub val int other;
+end
+fnc clone(Counters s) -> Counters { return new Counters(s.count, s.other); }
+fnc plus_one(Counters s) -> Counters { return new Counters(s.count + 1, s.other); }
+fnc times_three(Counters s) -> Counters { return new Counters(s.count * 3, s.other); }
+fnc write_other(Counters s) -> Counters { return new Counters(s.count, 17); }
+fnc first(Counters s) -> StatePatch<Counters> {
+  val StatePatch<Counters> p = new StatePatch<Counters>();
+  p.reduce("count", plus_one);
+  return p;
+}
+fnc second(Counters s) -> StatePatch<Counters> {
+  val StatePatch<Counters> p = new StatePatch<Counters>();
+  p.reduce("count", times_three);
+  return p;
+}
+fnc two_channels(Counters s) -> StatePatch<Counters> {
+  val StatePatch<Counters> p = new StatePatch<Counters>();
+  p.reduce("count", plus_one);
+  p.set("other", write_other);
+  return p;
+}
+fnc bad_mode(Counters s) -> StatePatch<Counters> {
+  val StatePatch<Counters> p = new StatePatch<Counters>();
+  p.set("count", plus_one);
+  return p;
+}
+fnc empty_channel(Counters s) -> StatePatch<Counters> {
+  val StatePatch<Counters> p = new StatePatch<Counters>();
+  p.set("", plus_one);
+  return p;
+}
+
+pub routine main() -> int {
+  val StatePatch<Counters> poisoned = new StatePatch<Counters>();
+  if poisoned.set("", plus_one) then return 1; fi
+  if poisoned.is_valid() then return 2; fi
+  if poisoned.set("count", plus_one) then return 3; fi
+
+  val StatePatch<Counters> wrong = new StatePatch<Counters>();
+  if wrong.add_update("count", 2, plus_one) then return 4; fi
+  if wrong.is_valid() then return 5; fi
+
+  val StatePatch<Counters> duplicate = new StatePatch<Counters>();
+  if !duplicate.set("other", write_other) then return 6; fi
+  if duplicate.set("other", write_other) then return 7; fi
+  if duplicate.is_valid() then return 8; fi
+
+  val SuperstepGraph<Counters> graph = new SuperstepGraph<Counters>(clone);
+  graph.add_node("plus", first);
+  graph.add_node("times", second);
+  graph.set_entry_point("plus");
+  graph.set_entry_point("times");
+  graph.add_reducer("count");
+  graph.set_finish_point("plus");
+  graph.set_finish_point("times");
+  if !graph.compile() then return 9; fi
+  val GraphResult<Counters> r = graph.invoke(new Counters(2, 0), 2);
+  if !r.ok || r.error_code != 0 then return 10; fi
+  // Frontier registration order: (2 + 1) * 3 = 9.
+  if r.state.count != 9 || r.state.other != 0 then return 11; fi
+
+  val SuperstepGraph<Counters> both = new SuperstepGraph<Counters>(clone);
+  both.add_node("both", two_channels);
+  both.add_reducer("count");
+  both.set_entry_point("both");
+  both.set_finish_point("both");
+  if !both.compile() then return 12; fi
+  val GraphResult<Counters> two = both.invoke(new Counters(2, 0), 2);
+  if !two.ok || two.state.count != 3 || two.state.other != 17 then return 13; fi
+
+  val SuperstepGraph<Counters> bad = new SuperstepGraph<Counters>(clone);
+  bad.add_node("bad", bad_mode);
+  bad.add_reducer("count");
+  bad.set_entry_point("bad");
+  bad.set_finish_point("bad");
+  if !bad.compile() then return 14; fi
+  val GraphResult<Counters> rejected = bad.invoke(new Counters(2, 0), 2);
+  if rejected.ok || rejected.error_code != 4 then return 15; fi
+  if rejected.state.count != 2 then return 16; fi
+
+  val SuperstepGraph<Counters> poisoned_graph = new SuperstepGraph<Counters>(clone);
+  poisoned_graph.add_node("bad", empty_channel);
+  poisoned_graph.set_entry_point("bad");
+  poisoned_graph.set_finish_point("bad");
+  if !poisoned_graph.compile() then return 17; fi
+  val GraphResult<Counters> rejected_patch = poisoned_graph.invoke(new Counters(2, 0), 2);
+  if rejected_patch.ok || rejected_patch.error_code != 3 then return 18; fi
+  if rejected_patch.state.count != 2 then return 19; fi
+  stdio.stdout.write("SG_PATCH_POLICY_PASS");
+  return 0;
+}

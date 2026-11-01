@@ -1,0 +1,5 @@
+# path|exact stdout, no newline
+tests/smoke.ores|SG_TYPED_SMOKE_PASS
+tests/topology.ores|SG_TOPOLOGY_PASS
+tests/patch-policy.ores|SG_PATCH_POLICY_PASS
+tests/limits.ores|SG_LIMITS_PASS

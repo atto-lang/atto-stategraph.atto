@@ -1,0 +1,72 @@
+// Negative and positive topology compilation: zero user callbacks during preflight.
+import class SuperstepGraph, StatePatch from "../src/supersteps";
+
+define class Sample as
+  pub val int n;
+end
+fnc clone(Sample s) -> Sample { return new Sample(s.n); }
+fnc idle(Sample s) -> StatePatch<Sample> {
+  return new StatePatch<Sample>();
+}
+fnc choose(Sample s) -> String { return "next"; }
+
+pub routine main() -> int {
+  val SuperstepGraph<Sample> empty = new SuperstepGraph<Sample>(clone);
+  if empty.topology_status() != 1 then return 1; fi
+  if empty.compile() then return 2; fi
+
+  val SuperstepGraph<Sample> missing_start = new SuperstepGraph<Sample>(clone);
+  missing_start.add_node("one", idle);
+  missing_start.set_finish_point("one");
+  if missing_start.topology_status() != 3 then return 3; fi
+  if missing_start.compile() then return 4; fi
+
+  val SuperstepGraph<Sample> unknown = new SuperstepGraph<Sample>(clone);
+  unknown.add_node("one", idle);
+  unknown.set_entry_point("one");
+  unknown.add_edge("one", "ghost");
+  if unknown.topology_status() != 2 then return 5; fi
+  if unknown.compile() then return 6; fi
+
+  val SuperstepGraph<Sample> sink = new SuperstepGraph<Sample>(clone);
+  sink.add_node("one", idle);
+  sink.set_entry_point("one");
+  if sink.topology_status() != 5 then return 7; fi
+  if sink.compile() then return 8; fi
+
+  val SuperstepGraph<Sample> mixed = new SuperstepGraph<Sample>(clone);
+  mixed.add_node("one", idle);
+  mixed.add_node("next", idle);
+  mixed.set_entry_point("one");
+  mixed.add_edge("one", "next");
+  val Array<String> choices = new Array<String>();
+  choices.add("next");
+  if !mixed.add_conditional_edges("one", choose, choices) then return 9; fi
+  mixed.set_finish_point("next");
+  if mixed.topology_status() != 6 then return 10; fi
+  if mixed.compile() then return 11; fi
+
+  val SuperstepGraph<Sample> orphan = new SuperstepGraph<Sample>(clone);
+  orphan.add_node("one", idle);
+  orphan.add_node("unreachable", idle);
+  orphan.set_entry_point("one");
+  orphan.set_finish_point("one");
+  orphan.set_finish_point("unreachable");
+  if orphan.topology_status() != 7 then return 12; fi
+  if orphan.compile() then return 13; fi
+
+  val SuperstepGraph<Sample> valid = new SuperstepGraph<Sample>(clone);
+  valid.add_node("one", idle);
+  valid.add_node("next", idle);
+  valid.set_entry_point("one");
+  val Array<String> allowed = new Array<String>();
+  allowed.add("next");
+  allowed.add("__end__");
+  if !valid.add_conditional_edges("one", choose, allowed) then return 14; fi
+  valid.set_finish_point("next");
+  if valid.topology_status() != 0 then return 15; fi
+  if !valid.compile() then return 16; fi
+  if valid.add_node("late", idle) then return 17; fi
+  stdio.stdout.write("SG_TOPOLOGY_PASS");
+  return 0;
+}

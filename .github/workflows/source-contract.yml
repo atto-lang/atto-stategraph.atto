@@ -1,47 +1,48 @@
-name: StateGraph source-only guard
+name: StateGraph source-only and integrity negatives
 on:
-  push:
   pull_request:
+  push:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   source-only:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Check tracked native source (not a guest test)
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact HEAD and all physical tracked source
         shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          for file in src/supersteps.ores tests/smoke.ores ci/verify-supersteps-native.sh README.md; do
-            test -s "$file"
-            test ! -L "$file"
-            git ls-files --error-unmatch -- "$file" >/dev/null
-          done
-          grep -q 'define pub class SuperstepGraph<S>' src/supersteps.ores
-          grep -q 'define pub class StatePatch<S>' src/supersteps.ores
-          grep -q 'branch.choose(self.copy_state(candidate))' src/supersteps.ores
-          grep -q 'SG_TYPED_SMOKE_PASS' tests/smoke.ores
-          if grep -R -nE 'import +(java|javascript|python)|System\.exit|child_process|eval\(' src/; then
-            echo 'Host execution dependency in native source' >&2
-            exit 1
-          fi
-          echo 'SOURCE_ONLY_PASS: this does NOT establish compiler acceptance'
-      - name: Native acceptance harness must reject fake zero-output compiler
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          sh ci/verify-exact-tree.sh
+          sh ci/audit-source.sh
+      - name: Six source-only full-tree tamper negatives
         shell: bash
+        run: sh ci/test-tree-integrity.sh
+      - name: Ensure a fake compiler does not pass native acceptance
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          fake="/usr/bin/true"
-          test -x "$fake"
-          export EXPECTED_TREE_SHA="$(git rev-parse HEAD^{tree})"
-          export ORESLANG_BIN="$fake"
-          export ORESLANG_COMPILER_SHA256="$(sha256sum "$fake" | cut -d' ' -f1)"
-          if sh ci/verify-supersteps-native.sh > /tmp/sg-fake-out 2>&1; then
-            echo 'ERROR: fake zero-output compiler falsely accepted' >&2
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export ORESLANG_BIN=/usr/bin/true
+          export ORESLANG_COMPILER_SHA256="$(sha256sum "$ORESLANG_BIN" | cut -d' ' -f1)"
+          if sh ci/verify-supersteps-native.sh > /tmp/sg-fake-compiler-log 2>&1; then
+            echo 'UNSAFE: fake compiler accepted' >&2
             exit 1
           fi
-          grep -q 'guest did not emit exact' /tmp/sg-fake-out
-          echo 'HARNESS_NEGATIVE_TEST_PASS: fake compiler correctly rejected'
+          grep -q 'missing compiler build_mode' /tmp/sg-fake-compiler-log
+          echo 'HARNESS_NEGATIVE_PASS: /usr/bin/true rejected; no guest evidence'
+      - name: Explicit evidence boundary
+        run: echo 'SOURCE_ONLY_PASS is not native Oreslang compiler or runtime evidence.'

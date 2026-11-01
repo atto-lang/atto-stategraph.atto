@@ -163,28 +163,116 @@ define pub class SuperstepGraph<S> as
     return false;
   }
 
-  pub compile(mut self) -> bool {
-    if self.compiled then return true; fi
-    if self.nodes.size() == 0 || self.edges.size() == 0 then return false; fi
+  // Deterministic, zero-callback topology preflight.
+  // 0=valid; 1=empty graph; 2=unknown edge endpoint;
+  // 3=missing START; 4=invalid branch; 5=missing outgoing route;
+  // 6=ambiguous mixed regular + conditional source;
+  // 7=unreachable registered node.
+  // Structural reachability is conservative for conditional choices: every
+  // allowlisted target is considered potentially reachable.
+  pub topology_status() -> int {
+    if self.nodes.size() == 0 || self.edges.size() == 0 then return 1; fi
+
     let bool has_entry = false;
     for let i = 0; i < self.edges.size(); i++ do
       val GraphEdge edge = self.edges.get(i);
       if edge.source == "__start__" then
         has_entry = true;
       else
-        if !self.has_node(edge.source) then return false; fi
+        if !self.has_node(edge.source) then return 2; fi
       fi
-      if edge.target != "__end__" && !self.has_node(edge.target) then return false; fi
+      if edge.target != "__end__" && !self.has_node(edge.target) then
+        return 2;
+      fi
     done
-    if !has_entry then return false; fi
+    if !has_entry then return 3; fi
+
     for let i = 0; i < self.branches.size(); i++ do
       val GraphBranch<S> branch = self.branches.get(i);
-      if !self.has_node(branch.source) then return false; fi
+      if !self.has_node(branch.source) then return 4; fi
+      if branch.allowed_targets.size() == 0 then return 4; fi
       for let j = 0; j < branch.allowed_targets.size(); j++ do
         val String target = branch.allowed_targets.get(j);
-        if target != "__end__" && !self.has_node(target) then return false; fi
+        if target != "__end__" && !self.has_node(target) then
+          return 4;
+        fi
       done
     done
+
+    // A node with zero transitions would inevitably dead-end. Mixing an
+    // unconditional edge with a conditional branch accidentally sends both;
+    // disallow that ambiguous construction at graph compilation.
+    for let n = 0; n < self.nodes.size(); n++ do
+      val String name = self.nodes.get(n).name;
+      let bool has_regular = false;
+      let bool has_conditional = false;
+      for let i = 0; i < self.edges.size(); i++ do
+        if self.edges.get(i).source == name then has_regular = true; fi
+      done
+      for let i = 0; i < self.branches.size(); i++ do
+        if self.branches.get(i).source == name then has_conditional = true; fi
+      done
+      if !has_regular && !has_conditional then return 5; fi
+      if has_regular && has_conditional then return 6; fi
+    done
+
+    // Traverse the finite declaration graph from START, including every
+    // declared conditional destination (without executing any selector).
+    val Array<String> reached = new Array<String>();
+    for let i = 0; i < self.edges.size(); i++ do
+      val GraphEdge edge = self.edges.get(i);
+      if edge.source == "__start__" then
+        let bool present = false;
+        for let j = 0; j < reached.size(); j++ do
+          if reached.get(j) == edge.target then present = true; fi
+        done
+        if !present then reached.add(edge.target); fi
+      fi
+    done
+
+    for let cursor = 0; cursor < reached.size(); cursor++ do
+      val String name = reached.get(cursor);
+      for let i = 0; i < self.edges.size(); i++ do
+        val GraphEdge edge = self.edges.get(i);
+        if edge.source == name && edge.target != "__end__" then
+          let bool present = false;
+          for let j = 0; j < reached.size(); j++ do
+            if reached.get(j) == edge.target then present = true; fi
+          done
+          if !present then reached.add(edge.target); fi
+        fi
+      done
+      for let i = 0; i < self.branches.size(); i++ do
+        val GraphBranch<S> branch = self.branches.get(i);
+        if branch.source == name then
+          for let k = 0; k < branch.allowed_targets.size(); k++ do
+            val String target = branch.allowed_targets.get(k);
+            if target != "__end__" then
+              let bool present = false;
+              for let j = 0; j < reached.size(); j++ do
+                if reached.get(j) == target then present = true; fi
+              done
+              if !present then reached.add(target); fi
+            fi
+          done
+        fi
+      done
+    done
+
+    for let i = 0; i < self.nodes.size(); i++ do
+      val String name = self.nodes.get(i).name;
+      let bool present = false;
+      for let j = 0; j < reached.size(); j++ do
+        if reached.get(j) == name then present = true; fi
+      done
+      if !present then return 7; fi
+    done
+    return 0;
+  }
+
+  pub compile(mut self) -> bool {
+    if self.compiled then return true; fi
+    if self.topology_status() != 0 then return false; fi
     self.compiled = true;
     return true;
   }
