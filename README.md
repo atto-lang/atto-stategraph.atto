@@ -159,3 +159,14 @@ malformed snapshots, maximum step budgets, and generation reuse. The
 missing/duplicate test coverage. They remain *authored tests*, not accepted
 compiler-backed passes, until the exact PR head executes on both approved
 Java/Graal and LLVM compilers.
+
+
+### Further GraphRun regression expansion
+
+The GraphRun ledger now has **24 authored native Oreslang test programs**.
+The newest tests stress 64 sequential claims, a full 1024-credit queue,
+cancellation and failure interleavings, immutable historical snapshots,
+independent tenant identities, malformed receipt histories, terminal
+transition matrices, and monotonic reservation budgets. The native CI
+manifest was expanded accordingly. These are **not** counted as compiler
+passes without executed Java/Graal and LLVM job/step/output receipts.

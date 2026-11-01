@@ -1,0 +1,38 @@
+// Every terminal transition denies later mutation on that snapshot.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, fail, finish from "../src/run_ledger";
+
+fnc closed(borrow RunState state, borrow RunKey key): bool {
+  val int v = state.version;
+  if start(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  if enqueue(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  if claim(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  if cancel(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  if fail(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  if finish(rt borrow state, rt borrow key, v).is_ok(); then return false; fi
+  return true;
+}
+
+pub routine main(): int {
+  val RunKey done_key = new RunKey("m", "done", 1);
+  val RunState done_seed = create("m", "done", 1, 3, 1).unwrap();
+  val RunState done_run = start(rt borrow done_seed, rt borrow done_key, 1).unwrap();
+  val RunState completed = finish(rt borrow done_run, rt borrow done_key, 2).unwrap();
+  if !closed(rt borrow completed, rt borrow done_key); then return 1; fi
+
+  val RunKey cancel_key = new RunKey("m", "canceled", 1);
+  val RunState cancel_seed = create("m", "canceled", 1, 3, 1).unwrap();
+  val RunState canceled = cancel(rt borrow cancel_seed, rt borrow cancel_key, 1).unwrap();
+  if !closed(rt borrow canceled, rt borrow cancel_key); then return 2; fi
+
+  val RunKey fail_key = new RunKey("m", "failed", 1);
+  val RunState fail_seed = create("m", "failed", 1, 3, 1).unwrap();
+  val RunState fail_run = start(rt borrow fail_seed, rt borrow fail_key, 1).unwrap();
+  val RunState failed = fail(rt borrow fail_run, rt borrow fail_key, 2).unwrap();
+  if !closed(rt borrow failed, rt borrow fail_key); then return 3; fi
+  if completed.phase != 2 || canceled.phase != 3 || failed.phase != 4; then
+    return 4;
+  fi
+  stdio.stdout.write("SG_RUN_TERMINAL_MATRIX_PASS");
+  return 0;
+}

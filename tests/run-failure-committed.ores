@@ -1,0 +1,33 @@
+// A later failing node cannot erase an earlier committed step.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, fail, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("commit", "fail-later", 1);
+  val RunState seed = create("commit", "fail-later", 1, 4, 2).unwrap();
+  val RunState active = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState first = enqueue(rt borrow active, rt borrow key, 2).unwrap();
+  val Claimed first_claim = claim(rt borrow first, rt borrow key, 3).unwrap();
+  val RunState one_done = publish(rt borrow first_claim.state,
+    rt borrow first_claim.receipt, 4).unwrap();
+  if one_done.completed_steps != 1 || one_done.version != 5; then return 1; fi
+  val RunState queued = enqueue(rt borrow one_done, rt borrow key, 5).unwrap();
+  val Claimed second = claim(rt borrow queued, rt borrow key, 6).unwrap();
+  val RunState queued_more = enqueue(rt borrow second.state, rt borrow key, 7).unwrap();
+  if queued_more.completed_steps != 1 || queued_more.pending != 1 ||
+     queued_more.in_flight != 2; then return 2; fi
+  val RunState failed = fail(rt borrow queued_more, rt borrow key, 8).unwrap();
+  if failed.phase != 4 || failed.completed_steps != 1 ||
+     failed.pending != 0 || failed.in_flight != 0 ||
+     failed.claim_version != 0; then return 3; fi
+  if publish(rt borrow failed, rt borrow second.receipt, 9).is_ok(); then return 4; fi
+  if publish(rt borrow failed, rt borrow first_claim.receipt, 9).is_ok(); then
+    return 5;
+  fi
+  if enqueue(rt borrow failed, rt borrow key, 9).is_ok(); then return 6; fi
+  if cancel(rt borrow failed, rt borrow key, 9).is_ok(); then return 7; fi
+  if finish(rt borrow failed, rt borrow key, 9).is_ok(); then return 8; fi
+  if one_done.completed_steps != 1 || one_done.phase != 1; then return 9; fi
+  stdio.stdout.write("SG_RUN_FAIL_COMMITTED_PASS");
+  return 0;
+}

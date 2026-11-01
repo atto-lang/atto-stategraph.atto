@@ -1,0 +1,36 @@
+// Two owners may have equal serial/version numbers but never share receipts.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey alice_key = new RunKey("alice", "same-id", 10);
+  val RunKey bob_key = new RunKey("bob", "same-id", 10);
+  val RunState alice_seed = create("alice", "same-id", 10, 3, 1).unwrap();
+  val RunState bob_seed = create("bob", "same-id", 10, 3, 1).unwrap();
+  val RunState alice_run = start(rt borrow alice_seed, rt borrow alice_key, 1).unwrap();
+  val RunState bob_run = start(rt borrow bob_seed, rt borrow bob_key, 1).unwrap();
+  val RunState alice_queue = enqueue(rt borrow alice_run, rt borrow alice_key, 2).unwrap();
+  val RunState bob_queue = enqueue(rt borrow bob_run, rt borrow bob_key, 2).unwrap();
+  val Claimed alice = claim(rt borrow alice_queue, rt borrow alice_key, 3).unwrap();
+  val Claimed bob = claim(rt borrow bob_queue, rt borrow bob_key, 3).unwrap();
+  if alice.receipt.serial != bob.receipt.serial ||
+     alice.receipt.issued_version != bob.receipt.issued_version; then return 1; fi
+  if publish(rt borrow alice.state, rt borrow bob.receipt, 4).is_ok(); then return 2; fi
+  if publish(rt borrow bob.state, rt borrow alice.receipt, 4).is_ok(); then return 3; fi
+  val RunState alice_committed = publish(rt borrow alice.state,
+    rt borrow alice.receipt, 4).unwrap();
+  if alice_committed.completed_steps != 1 || bob.state.completed_steps != 0; then
+    return 4;
+  fi
+  val RunState bob_committed = publish(rt borrow bob.state,
+    rt borrow bob.receipt, 4).unwrap();
+  if bob_committed.completed_steps != 1 || alice_committed.key.tenant != "alice"; then
+    return 5;
+  fi
+  val RunState alice_done = finish(rt borrow alice_committed, rt borrow alice_key, 5).unwrap();
+  val RunState bob_done = finish(rt borrow bob_committed, rt borrow bob_key, 5).unwrap();
+  if alice_done.phase != 2 || bob_done.phase != 2; then return 6; fi
+  if alice_seed.version != 1 || bob_seed.version != 1; then return 7; fi
+  stdio.stdout.write("SG_RUN_INDEPENDENT_PASS");
+  return 0;
+}

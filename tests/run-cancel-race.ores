@@ -1,0 +1,41 @@
+// Cancellation at each state boundary fences subsequent work.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("race", "cancel", 6);
+  val RunState seed = create("race", "cancel", 6, 5, 3).unwrap();
+  val RunState started = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState cancelled_idle = cancel(rt borrow started, rt borrow key, 2).unwrap();
+  if cancelled_idle.phase != 3 || cancelled_idle.version != 3; then return 1; fi
+  if enqueue(rt borrow cancelled_idle, rt borrow key, 3).is_ok(); then return 2; fi
+
+  val RunState one = enqueue(rt borrow started, rt borrow key, 2).unwrap();
+  val RunState cancelled_queued = cancel(rt borrow one, rt borrow key, 3).unwrap();
+  if cancelled_queued.pending != 0 || cancelled_queued.version != 4; then
+    return 3;
+  fi
+  if claim(rt borrow cancelled_queued, rt borrow key, 4).is_ok(); then return 4; fi
+
+  val Claimed active = claim(rt borrow one, rt borrow key, 3).unwrap();
+  val RunState cancelled_active = cancel(rt borrow active.state, rt borrow key, 4).unwrap();
+  if cancelled_active.in_flight != 0 || cancelled_active.claim_version != 0; then
+    return 5;
+  fi
+  if publish(rt borrow cancelled_active, rt borrow active.receipt, 5).is_ok(); then
+    return 6;
+  fi
+  if publish(rt borrow active.state, rt borrow active.receipt, 5).is_ok(); then
+    return 7;
+  fi
+  val RunState successful = publish(rt borrow active.state,
+    rt borrow active.receipt, 4).unwrap();
+  val RunState cancelled_after = cancel(rt borrow successful, rt borrow key, 5).unwrap();
+  if cancelled_after.completed_steps != 1 || cancelled_after.phase != 3; then
+    return 8;
+  fi
+  if finish(rt borrow cancelled_after, rt borrow key, 6).is_ok(); then return 9; fi
+  if seed.version != 1 || started.phase != 1; then return 10; fi
+  stdio.stdout.write("SG_RUN_CANCEL_RACE_PASS");
+  return 0;
+}

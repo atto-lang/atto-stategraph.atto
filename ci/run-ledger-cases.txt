@@ -13,3 +13,13 @@ tests/run-malformed.ores|SG_RUN_MALFORMED_PASS
 tests/run-boundaries.ores|SG_RUN_BOUNDARIES_PASS
 tests/run-generations.ores|SG_RUN_GENERATIONS_PASS
 tests/run-issue-version.ores|SG_RUN_ISSUE_VERSION_PASS
+tests/run-trace-64.ores|SG_RUN_TRACE64_PASS
+tests/run-credits-1024.ores|SG_RUN_CREDITS1024_PASS
+tests/run-cancel-race.ores|SG_RUN_CANCEL_RACE_PASS
+tests/run-failure-committed.ores|SG_RUN_FAIL_COMMITTED_PASS
+tests/run-terminal-matrix.ores|SG_RUN_TERMINAL_MATRIX_PASS
+tests/run-corrupt-claims.ores|SG_RUN_CORRUPT_CLAIMS_PASS
+tests/run-independent.ores|SG_RUN_INDEPENDENT_PASS
+tests/run-step-budget.ores|SG_RUN_STEP_BUDGET_PASS
+tests/run-snapshots.ores|SG_RUN_SNAPSHOTS_PASS
+tests/run-interleaved-receipts.ores|SG_RUN_INTERLEAVED_PASS

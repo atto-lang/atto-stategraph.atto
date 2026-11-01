@@ -1,0 +1,41 @@
+// 64 deterministic admit/claim/publish cycles; never reuse a receipt.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("trace", "sixty-four", 1);
+  val RunState seed = create("trace", "sixty-four", 1, 64, 4).unwrap();
+  let mut RunState current = start(rt borrow seed, rt borrow key, 1).unwrap();
+  if current.version != 2; then return 1; fi
+  for let i = 0; i < 64; i++ do
+    val RunState enqueued = enqueue(rt borrow current, rt borrow key,
+      current.version).unwrap();
+    if enqueued.pending != 1 || enqueued.in_flight != 0; then return 2; fi
+    val Claimed issued = claim(rt borrow enqueued, rt borrow key,
+      enqueued.version).unwrap();
+    if issued.receipt.serial != i + 1 ||
+       issued.receipt.issued_version != issued.state.version ||
+       issued.state.claim_version != issued.state.version; then return 3; fi
+    val RunState next = publish(rt borrow issued.state,
+      rt borrow issued.receipt, issued.state.version).unwrap();
+    if next.completed_steps != i + 1 || next.pending != 0 ||
+       next.in_flight != 0 || next.claim_version != 0; then return 4; fi
+    if next.version != 2 + 3 * (i + 1) ||
+       next.next_receipt != i + 2; then return 5; fi
+    if publish(rt borrow next, rt borrow issued.receipt, next.version).is_ok(); then
+      return 6;
+    fi
+    current = next;
+  done
+  if enqueue(rt borrow current, rt borrow key, current.version).is_ok(); then
+    return 7;
+  fi
+  val RunState done = finish(rt borrow current, rt borrow key,
+    current.version).unwrap();
+  if done.phase != 2 || done.completed_steps != 64 || done.version != 195; then
+    return 8;
+  fi
+  if seed.phase != 0 || seed.version != 1; then return 9; fi
+  stdio.stdout.write("SG_RUN_TRACE64_PASS");
+  return 0;
+}

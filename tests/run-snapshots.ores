@@ -1,0 +1,37 @@
+// Transitions are persistent snapshots; old run views cannot be mutated.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("snapshot", "run", 12);
+  val RunState original = create("snapshot", "run", 12, 4, 2).unwrap();
+  val RunState running = start(rt borrow original, rt borrow key, 1).unwrap();
+  val RunState queued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val Claimed active = claim(rt borrow queued, rt borrow key, 3).unwrap();
+  val RunState completed = publish(rt borrow active.state,
+    rt borrow active.receipt, 4).unwrap();
+  val RunState canceled = cancel(rt borrow completed, rt borrow key, 5).unwrap();
+  if original.version != 1 || original.phase != 0 ||
+     original.completed_steps != 0 || original.pending != 0; then return 1; fi
+  if running.version != 2 || running.phase != 1 ||
+     running.pending != 0 || running.next_receipt != 1; then return 2; fi
+  if queued.version != 3 || queued.pending != 1 ||
+     queued.completed_steps != 0 || queued.in_flight != 0; then return 3; fi
+  if active.state.version != 4 || active.state.pending != 0 ||
+     active.state.in_flight != 1 || active.state.claim_version != 4; then
+    return 4;
+  fi
+  if completed.version != 5 || completed.phase != 1 ||
+     completed.completed_steps != 1 || completed.claim_version != 0; then
+    return 5;
+  fi
+  if canceled.version != 6 || canceled.phase != 3 ||
+     canceled.completed_steps != 1; then return 6; fi
+  if publish(rt borrow canceled, rt borrow active.receipt, 6).is_ok(); then
+    return 7;
+  fi
+  if active.receipt.key.run_id != "run" ||
+     active.receipt.key.generation != 12; then return 8; fi
+  stdio.stdout.write("SG_RUN_SNAPSHOTS_PASS");
+  return 0;
+}

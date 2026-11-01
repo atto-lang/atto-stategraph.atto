@@ -1,0 +1,33 @@
+// Queuing extra work advances optimistic version, not the active claim epoch.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("interleaved", "work", 2);
+  val RunState seed = create("interleaved", "work", 2, 6, 4).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState enqueued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val Claimed issued = claim(rt borrow enqueued, rt borrow key, 3).unwrap();
+  if issued.state.claim_version != 4; then return 1; fi
+  let mut RunState current = issued.state;
+  for let i = 0; i < 3; i++ do
+    val RunState next = enqueue(rt borrow current, rt borrow key,
+      current.version).unwrap();
+    if next.claim_version != 4 || next.in_flight != 1 ||
+       next.pending != i + 1; then return 2; fi
+    current = next;
+  done
+  val ClaimReceipt forged_latest = new ClaimReceipt(key, 1, current.version);
+  if publish(rt borrow current, rt borrow forged_latest,
+     current.version).is_ok(); then return 3; fi
+  val RunState published = publish(rt borrow current, rt borrow issued.receipt,
+    current.version).unwrap();
+  if published.completed_steps != 1 || published.pending != 3 ||
+     published.version != 8; then return 4; fi
+  if publish(rt borrow published, rt borrow issued.receipt, 8).is_ok(); then
+    return 5;
+  fi
+  if finish(rt borrow published, rt borrow key, 8).is_ok(); then return 6; fi
+  stdio.stdout.write("SG_RUN_INTERLEAVED_PASS");
+  return 0;
+}

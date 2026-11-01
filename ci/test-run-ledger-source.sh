@@ -16,9 +16,9 @@ for path in src/run_ledger.ores ci/run-ledger-cases.txt ci/verify-run-ledger-nat
   [ -f "$path" ] && [ ! -L "$path" ] || die "missing or symlink file $path"
   git ls-files --error-unmatch -- "$path" >/dev/null 2>&1 || die "untracked file $path"
 done
-[ "$(git ls-files ':(glob)tests/run-*.ores' | wc -l | tr -d ' ')" -eq 14 ] ||
+[ "$(git ls-files ':(glob)tests/run-*.ores' | wc -l | tr -d ' ')" -eq 24 ] ||
   die "guest case count changed"
-[ "$(grep -c '^tests/run-.*\.ores|' ci/run-ledger-cases.txt)" -eq 14 ] ||
+[ "$(grep -c '^tests/run-.*\.ores|' ci/run-ledger-cases.txt)" -eq 24 ] ||
   die "manifest case count changed"
 tmp="$(mktemp -d)" || die "cannot allocate private manifest scratch"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM

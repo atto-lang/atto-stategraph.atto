@@ -1,0 +1,32 @@
+// Step budget is a reservation ceiling, not just a post-completion check.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("steps", "three", 7);
+  val RunState seed = create("steps", "three", 7, 3, 3).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState a = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val RunState b = enqueue(rt borrow a, rt borrow key, 3).unwrap();
+  val RunState c = enqueue(rt borrow b, rt borrow key, 4).unwrap();
+  if enqueue(rt borrow c, rt borrow key, 5).is_ok(); then return 1; fi
+  val Claimed one = claim(rt borrow c, rt borrow key, 5).unwrap();
+  if enqueue(rt borrow one.state, rt borrow key, 6).is_ok(); then return 2; fi
+  val RunState d = publish(rt borrow one.state, rt borrow one.receipt, 6).unwrap();
+  if d.completed_steps != 1 || d.pending != 2; then return 3; fi
+  if enqueue(rt borrow d, rt borrow key, 7).is_ok(); then return 4; fi
+  val Claimed two = claim(rt borrow d, rt borrow key, 7).unwrap();
+  val RunState e = publish(rt borrow two.state, rt borrow two.receipt, 8).unwrap();
+  if e.completed_steps != 2 || e.pending != 1; then return 5; fi
+  if enqueue(rt borrow e, rt borrow key, 9).is_ok(); then return 6; fi
+  val Claimed three = claim(rt borrow e, rt borrow key, 9).unwrap();
+  val RunState f = publish(rt borrow three.state, rt borrow three.receipt, 10).unwrap();
+  if f.completed_steps != 3 || f.pending != 0 || f.in_flight != 0; then
+    return 7;
+  fi
+  if enqueue(rt borrow f, rt borrow key, 11).is_ok(); then return 8; fi
+  val RunState completed = finish(rt borrow f, rt borrow key, 11).unwrap();
+  if completed.phase != 2 || completed.completed_steps != 3; then return 9; fi
+  stdio.stdout.write("SG_RUN_STEP_BUDGET_PASS");
+  return 0;
+}

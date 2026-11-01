@@ -1,0 +1,42 @@
+// Exercise the declared maximum of 1024 queued work credits.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("limits", "queue-max", 9);
+  val RunState seed = create("limits", "queue-max", 9, 1024, 1024).unwrap();
+  let mut RunState current = start(rt borrow seed, rt borrow key, 1).unwrap();
+  for let i = 0; i < 1024; i++ do
+    val Result<RunState, String> admitted =
+      enqueue(rt borrow current, rt borrow key, current.version);
+    if admitted.is_err(); then return 1; fi
+    current = admitted.unwrap();
+  done
+  if current.pending != 1024 || current.completed_steps != 0 ||
+     current.version != 1026; then return 2; fi
+  if enqueue(rt borrow current, rt borrow key, current.version).is_ok(); then
+    return 3;
+  fi
+  val Claimed issued = claim(rt borrow current, rt borrow key,
+    current.version).unwrap();
+  if issued.state.pending != 1023 || issued.state.in_flight != 1; then
+    return 4;
+  fi
+  if enqueue(rt borrow issued.state, rt borrow key,
+     issued.state.version).is_ok(); then return 5; fi
+  val RunState applied = publish(rt borrow issued.state,
+    rt borrow issued.receipt, issued.state.version).unwrap();
+  if applied.completed_steps != 1 || applied.pending != 1023; then return 6; fi
+  if finish(rt borrow applied, rt borrow key, applied.version).is_ok(); then
+    return 7;
+  fi
+  val RunState stopped = cancel(rt borrow applied, rt borrow key,
+    applied.version).unwrap();
+  if stopped.phase != 3 || stopped.pending != 0 ||
+     stopped.completed_steps != 1; then return 8; fi
+  if claim(rt borrow stopped, rt borrow key, stopped.version).is_ok(); then
+    return 9;
+  fi
+  stdio.stdout.write("SG_RUN_CREDITS1024_PASS");
+  return 0;
+}

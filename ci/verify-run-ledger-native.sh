@@ -59,7 +59,7 @@ while IFS='|' read -r path expected || [ -n "$path" ]; do
   printf '%s\n' "$path" >> "$tmp/seen"
   printf '%s\n' "$path" >> "$tmp/cases"
   count=$((count + 1))
-  [ "$count" -le 16 ] || die "case budget exceeded"
+  [ "$count" -le 32 ] || die "case budget exceeded"
   "$limiter" --kill-after=3s 35s "$ORESLANG_BIN" --check "$path" > "$tmp/check" 2> "$tmp/check-err" ||
     { cat "$tmp/check-err" >&2; die "native compiler check failed for $path"; }
   "$limiter" --kill-after=3s 35s "$ORESLANG_BIN" "$path" > "$tmp/out" 2> "$tmp/run-err" ||
@@ -68,8 +68,8 @@ while IFS='|' read -r path expected || [ -n "$path" ]; do
   printf '%s' "$expected" | cmp -s - "$tmp/out" || die "wrong guest output for $path"
   printf 'SG_RUN_LEDGER_NATIVE_CASE_PASS file=%s blob=%s\n' "$path" "$(git rev-parse "HEAD:$path")"
 done < "$manifest"
-[ "$count" -eq 14 ] || die "required cases missing"
+[ "$count" -eq 24 ] || die "required cases missing"
 git ls-files ':(glob)tests/run-*.ores' | sort > "$tmp/tracked"
 sort "$tmp/cases" > "$tmp/manifest"
 cmp -s "$tmp/tracked" "$tmp/manifest" || die "manifest/source mismatch"
-printf 'SG_RUN_LEDGER_NATIVE_PASS count=14 commit=%s tree=%s compiler_sha256=%s\n' "$commit" "$tree" "$actual"
+printf 'SG_RUN_LEDGER_NATIVE_PASS count=24 commit=%s tree=%s compiler_sha256=%s\n' "$commit" "$tree" "$actual"

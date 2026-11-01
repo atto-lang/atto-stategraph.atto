@@ -81,3 +81,27 @@ records. The actor owner must keep those records private and authorize
 messages before invoking transitions. Treat compiler-backed execution and
 independent review as hard gates; GitHub Actions source-only success is not
 guest evidence.
+
+
+## Extended ordered-state testing: 24 native programs (authored, not executed)
+
+Ten more native Oreslang guest programs expand ledger coverage from 14 to
+**24**. The new `run-trace-64.ores` executes 64 consecutive enqueue/claim/
+publish transitions with exact version and receipt conservation checks.
+`run-credits-1024.ores` fills the full bounded credit allowance and checks
+admission rejection, cancellation draining, and preservation of earlier
+published steps. Remaining cases cover cancellation at each transition
+boundary, failure after a successful publication, terminal transition
+matrices, malformed receipt/snapshot histories, isolation of independent
+tenants using identical serial/version values, three-step reservation
+conservation, preservation of historical immutable snapshots, and a single
+outstanding claim surviving three additional queue admissions.
+
+The manifest `ci/run-ledger-cases.txt` now enumerates 24 explicit exact-output
+guests. Both source-only and native harnesses require the complete
+`tests/run-*.ores` set, exact outputs, and no duplicate case paths. Native
+Graal and LLVM jobs have separate 35-minute overall budgets (each individual
+`--check`/execution remains capped at 35 seconds), but **cannot pass without
+operator-provisioned and digest-pinned Oreslang compiler binaries**. This is
+not a guarantee of true run cancellation, physical mailbox credits, actor
+worker scheduling, or guest passing tests.
