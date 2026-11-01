@@ -23,12 +23,12 @@ support for GraphState<T>, typed callbacks, Array, Result, imports, actors or
 the current StateGraph modules. Unsupported features must be rejected explicitly
 until implemented, not silently emulated by Python, JavaScript, Rust or C#.
 
-## Canonical portable probes (same exact Git blobs across SIX repositories)
+## Canonical portable probes (one authoritative source; backend copies NOT established)
 
-The ten `.ores` files in this directory are authored probes; nine are
+The ten `.ores` files in this central StateGraph repository are authored probes; nine are
 independently listed requirements, and `graph_support.ores` is the linked
 helper module. The `manifest.txt` records each canonical Git blob SHA
-to prevent unnoticed syntax divergence between compiler repositories.
+to enable future exact-byte checks when a reviewed copy is explicitly authorized.\nThe compiler repositories currently contain separate backend-specific regression probes;\nthey have **not** established byte-identical copies of this complete canonical corpus.
 
 Required categories:
 1. Checked scalar arithmetic and source entry.
@@ -74,10 +74,7 @@ evidence, not just syntax recognition.
 8. Capture test case counts and nonzero step IDs. Separate scalar, parser,
    typechecker, genuine guest, actor scheduling and NativeAOT/Wasm evidence.
 
-For private source: this contract source is replicated **within the same
-organization** per the current parity work. Cross-organization private tree
-mirroring still requires specific authorization and a verifiable identical
-full Git tree; no public mirroring. These probes are neither a substitute for
+For private source: this canonical corpus currently resides only in the\nStateGraph repository. Separate backend-specific probes were authored in each\ncompiler repository without copying the private StateGraph implementation.\nCross-organization private tree mirroring still requires specific authorization\nand a verifiable identical full Git tree; no public mirroring. These probes are neither a substitute for
 the actual StateGraph implementation nor authorization for private transfer.
 
 ## Promotion policy
