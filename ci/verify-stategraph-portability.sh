@@ -53,5 +53,13 @@ printf '%s\n' "$support" >> "$tmp/cases"
 git ls-files ':(glob)contracts/stategraph-portability/v1/*.ores' | sort > "$tmp/actual"
 sort "$tmp/cases" > "$tmp/expected"
 cmp -s "$tmp/actual" "$tmp/expected" || die "unlisted or missing Oreslang source"
+shared=contracts/stategraph-portability/shared-scalar.ores
+[ -f "$shared" ] && [ ! -L "$shared" ] || die "canonical shared scalar missing or symlinked"
+git ls-files --error-unmatch -- "$shared" >/dev/null 2>&1 || die "untracked shared scalar"
+[ "$(git hash-object "$shared")" = "ec1cb5e6cc38c26842d724ccacb0df028b702c3f" ] ||
+  die "canonical shared scalar Git blob mismatch"
+[ "$(git rev-parse "HEAD:$shared")" = "ec1cb5e6cc38c26842d724ccacb0df028b702c3f" ] ||
+  die "canonical shared scalar differs from committed file"
+
 printf 'SG_PORTABILITY_SOURCE_ONLY_PASS requirements=9 source_files=10 head=%s tree=%s\n' \
   "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
