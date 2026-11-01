@@ -27,11 +27,31 @@ fnc reserved_end_node_denied(): TestOutcome {
   return expect_equal_string(graph.validate(), "reserved_node",
     "terminal sentinel cannot be registered as a callable node");
 }
+fnc duplicate_node_name_is_rejected(): TestOutcome {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[new Node<String>("a", identity), new Node<String>("a", identity)],
+    arr[new Edge<String>("START", "a", always), new Edge<String>("a", "END", always)], 8
+  );
+  return expect_equal_string(graph.validate(), "duplicate_node",
+    "graph must reject ambiguous node identities before callbacks");
+}
+
+fnc missing_start_edge_is_rejected(): TestOutcome {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[new Node<String>("a", identity)],
+    arr[new Edge<String>("a", "END", always)], 8
+  );
+  return expect_equal_string(graph.validate(), "missing_start",
+    "graph must have a START transition");
+}
+
 pub routine main(): void {
   val TestSuite suite = new TestSuite("stategraph", arr[
     new TestCase("rejects_zero_step_budget", rejects_zero_step_budget, false, ""),
     new TestCase("rejects_unknown_edge_target", rejects_unknown_edge_target, false, ""),
-    new TestCase("reserved_end_node_denied", reserved_end_node_denied, false, "")
+    new TestCase("reserved_end_node_denied", reserved_end_node_denied, false, ""),
+    new TestCase("duplicate_node_name_is_rejected", duplicate_node_name_is_rejected, false, ""),
+    new TestCase("missing_start_edge_is_rejected", missing_start_edge_is_rejected, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
