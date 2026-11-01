@@ -1,0 +1,76 @@
+// Six deterministic pure-Oreslang StateGraph failure/rollback tests.
+import class TestCase, TestSuite, TestOptions, RunSummary, TestOutcome from '../vendor/oreslang/testing';
+import fnc expect_true, expect_equal_string, run_suite, require_success from '../vendor/oreslang/testing';
+import class StateGraph, Node, Edge, RunResult from '../src/stategraph';
+
+fnc keep(String name, int value): int { return value; }
+fnc increment(String name, int value): int { return value + 1; }
+fnc yes(int value): bool { return true; }
+fnc no(int value): bool { return false; }
+
+fnc graph_with_budget(int budget): StateGraph<int> {
+  return new StateGraph<int>(
+    arr[new Node<int>("n", keep)],
+    arr[new Edge<int>("START", "n", yes), new Edge<int>("n", "END", yes)],
+    budget
+  );
+}
+fnc zero_budget_rejected(): TestOutcome {
+  return expect_equal_string(graph_with_budget(0).validate(), "invalid_budget", "zero-step budget must fail");
+}
+fnc excessive_budget_rejected(): TestOutcome {
+  return expect_equal_string(graph_with_budget(10001).validate(), "invalid_budget", "excessive budget must fail");
+}
+fnc duplicate_node_rejected(): TestOutcome {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("n", keep), new Node<int>("n", increment)],
+    arr[new Edge<int>("START", "n", yes), new Edge<int>("n", "END", yes)],
+    8
+  );
+  return expect_equal_string(graph.validate(), "duplicate_node", "duplicate node names must fail before dispatch");
+}
+fnc reserved_node_rejected(): TestOutcome {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("START", keep)],
+    arr[new Edge<int>("START", "END", yes)],
+    8
+  );
+  return expect_equal_string(graph.validate(), "reserved_node", "START is a sentinel not a node");
+}
+fnc missing_start_rejected(): TestOutcome {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("n", keep)],
+    arr[new Edge<int>("n", "END", yes)],
+    8
+  );
+  return expect_equal_string(graph.validate(), "missing_start", "missing START transition must fail");
+}
+fnc ambiguous_start_rollback(): TestOutcome {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("n", increment)],
+    arr[
+      new Edge<int>("START", "n", yes),
+      new Edge<int>("START", "n", yes),
+      new Edge<int>("n", "END", yes)
+    ],
+    8
+  );
+  val RunResult<int> result = graph.run(99);
+  return expect_true(result.status == "ambiguous_edge" && result.state == 99 &&
+    result.steps == 0 && result.cursor == "START",
+    "ambiguous START must leave candidate state and cursor unchanged");
+}
+pub routine main(): void {
+  val TestSuite suite = new TestSuite("stategraph/extended", arr[
+    new TestCase("validation/zero-budget", zero_budget_rejected, false, ""),
+    new TestCase("validation/excessive-budget", excessive_budget_rejected, false, ""),
+    new TestCase("validation/duplicate-node", duplicate_node_rejected, false, ""),
+    new TestCase("validation/reserved-node", reserved_node_rejected, false, ""),
+    new TestCase("validation/missing-start", missing_start_rejected, false, ""),
+    new TestCase("execution/ambiguous-start-rollback", ambiguous_start_rollback, false, "")
+  ]);
+  val TestOptions options = new TestOptions("", false, true);
+  val RunSummary summary = run_suite(suite, options);
+  require_success(summary);
+  return;
+}
