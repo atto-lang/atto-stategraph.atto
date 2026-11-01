@@ -1,5 +1,5 @@
-import class TestCase, TestSuite, TestOptions, TestOutcome, RunSummary from "std/testing";
-import fnc expect_true, expect_false, expect_equal_int, expect_equal_string, expect_near_float, run_suite, require_success, fail from "std/testing";
+import class TestCase, TestSuite, TestOptions, TestOutcome, RunSummary from "ores.std/testing";
+import fnc expect_true, expect_false, expect_equal_int, expect_equal_string, expect_near_float, run_suite, require_success, fail from "ores.std/testing";
 import class StateGraph, Node, Edge, RunResult from "../src/stategraph";
 fnc always(String state): bool { return true; }
 fnc identity(String node, String state): String { return state; }
