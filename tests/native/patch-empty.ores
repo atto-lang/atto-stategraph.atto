@@ -1,0 +1,37 @@
+// Empty writes never invoke reducers; malformed writes fail before publication.
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc add(int old, int delta): int { return old + delta; }
+
+pub routine main(): void {
+  val List<StatePatch<int>> empty_writes = arr[];
+  val List<StateReducer<int, int>> empty_reducers = arr[];
+  val List<StateReducer<int, int>> once = arr[
+    new StateReducer<int, int>("add", add)
+  ];
+  val List<StateReducer<int, int>> twice = arr[
+    new StateReducer<int, int>("add", add),
+    new StateReducer<int, int>("add", add)
+  ];
+  val List<StatePatch<int>> one = arr[
+    new StatePatch<int>("add", 2)
+  ];
+  val PatchBatchResult<int> none = apply_batch<int, int>(40, empty_writes, empty_reducers);
+  val PatchBatchResult<int> idle = apply_batch<int, int>(40, empty_writes, once);
+  val PatchBatchResult<int> unknown = apply_batch<int, int>(40, one, empty_reducers);
+  val PatchBatchResult<int> conflict = apply_batch<int, int>(40, one, twice);
+  val PatchBatchResult<int> ok = apply_batch<int, int>(40, one, once);
+
+  if none.status == "applied" && none.state == 40 && none.applied == 0 &&
+     idle.status == "applied" && idle.state == 40 && idle.applied == 0 &&
+     unknown.status == "unknown_channel" && unknown.state == 40 &&
+     unknown.applied == 0 && conflict.status == "duplicate_reducer" &&
+     conflict.state == 40 && conflict.applied == 0 &&
+     ok.status == "applied" && ok.state == 42 && ok.applied == 1; do
+    stdio.stdout.write("sg:patch-empty-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:patch-empty-fail");
+  return;
+}

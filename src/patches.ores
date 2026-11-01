@@ -25,6 +25,22 @@ define module patches as
     List<StatePatch<P>> writes,
     List<StateReducer<S, P>> reducers
   ): PatchBatchResult<S> {
+    // Resource guards run before user callbacks and before quadratic scans.
+    let int write_limit = 0;
+    for const write of writes do
+      write_limit = write_limit + 1;
+      if write_limit > 1024; do
+        return new PatchBatchResult<S>("too_many_writes", initial, 0);
+      fi
+    done
+    let int reducer_limit = 0;
+    for const reducer of reducers do
+      reducer_limit = reducer_limit + 1;
+      if reducer_limit > 1024; do
+        return new PatchBatchResult<S>("too_many_reducers", initial, 0);
+      fi
+    done
+
     // A separate preflight pass ensures a detected schema conflict cannot
     // execute user code or partially change the returned state.
     for const write of writes do

@@ -40,6 +40,22 @@ define module sg as
         return "invalid_budget";
       fi
 
+      // Bound construction work before quadratic duplicate/edge scans.
+      let int registered_nodes = 0;
+      for const registered of self.nodes do
+        registered_nodes = registered_nodes + 1;
+        if registered_nodes > 1024; do
+          return "too_many_nodes";
+        fi
+      done
+      let int registered_edges = 0;
+      for const route of self.edges do
+        registered_edges = registered_edges + 1;
+        if registered_edges > 8192; do
+          return "too_many_edges";
+        fi
+      done
+
       let int start_edges = 0;
       for const node of self.nodes do
         if node.id == "" || node.id == "START" || node.id == "END"; do

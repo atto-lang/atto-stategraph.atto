@@ -7,3 +7,6 @@ tests/native/builder-compile.ores|sg:builder-ok
 tests/native/patch-batch.ores|sg:patch-batch-ok
 tests/native/invalid-boundaries.ores|sg:invalid-boundaries-ok
 tests/native/missing-outgoing.ores|sg:missing-outgoing-ok
+tests/native/preflight-budget.ores|sg:preflight-budget-ok
+tests/native/patch-order.ores|sg:patch-order-ok
+tests/native/patch-empty.ores|sg:patch-empty-ok

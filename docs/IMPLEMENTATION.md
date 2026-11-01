@@ -42,3 +42,19 @@ Source lint is only source lint. Native acceptance requires: exact branch-head S
 `StatePatch<P>` carries a typed payload P and channel string; reducers `StateReducer<S,P>` are explicitly bound to channels. `apply_batch<S,P>` validates every write before calling any reducer. Duplicate writes to one channel always yield `write_conflict`; unknown channels and duplicate reducers fail closed. After preflight, reducers are pure functions `S,P -> S`; results are combined in declared write order. There is no automatic field reflection, implicit conversion, or mutable sharing. Reducer callbacks can still throw or have out-of-band effects; this API offers neither transactional rollback nor effect isolation.
 
 Open blockers: real compiler support for `List`/generic Oreslang classes and import references, whole-file compilation, native test receipts for all eight cases, proper single-node add API, per-channel heterogeneous reducers, and proper actor-supervised work. These remain unverified while Actions jobs are zero-step.
+
+
+## Bounded userland preflight and additional native regression cases
+
+The serial StateGraph validates node/edge count before quadratic structural
+scans (at most **1024 registered nodes** and **8192 edges**). The pure patch
+engine rejects batches of more than **1024 writes** or **1024 reducers**
+without calling guest merge callbacks and without publishing intermediate
+state. The separate superstep engine retains its existing independent bounds.
+
+Three extra native `.ores` cases check step budget boundaries 0/-1/10000/10001,
+strict reducer ordering under noncommutative operations, empty patch behavior,
+duplicate reducers and missing reducer schema. The native-case manifest now
+requires **11** guest programs, but source presence is not guest execution.
+Both genuine Graal and LLVM compilers must still compile the exact same
+userland source; CI attempts with zero job steps do not establish acceptance.
