@@ -210,10 +210,18 @@ pub routine main() -> int {
   if !bad_edges.add_node("a", one) then return 44; fi
   if !bad_edges.set_entry_point("a") then return 45; fi
   if bad_edges.set_entry_point("a") then return 46; fi
-  // 2026-11-01: three independently failing post-compile immutability gates.
-  if graph.add_edge("a", "join") then return 47; fi
-  if graph.set_finish_point("join") then return 48; fi
+  // A valid, previously-unused edge and finish point must not mutate the
+  // compiled graph; duplicate operations are not sufficient freeze evidence.
+  if graph.add_edge("b", "a") then return 47; fi
+  if graph.set_finish_point("a") then return 48; fi
   if graph.add_node("other", one) then return 49; fi
+  // Positive control: the same mutations are legal before compilation.
+  val SuperstepGraph<CounterState> mutable_control = new SuperstepGraph<CounterState>(copy_state);
+  if !mutable_control.add_node("a", one) then return 50; fi
+  if !mutable_control.add_node("b", two) then return 51; fi
+  if !mutable_control.set_entry_point("b") then return 52; fi
+  if !mutable_control.add_edge("b", "a") then return 53; fi
+  if !mutable_control.set_finish_point("a") then return 54; fi
   stdio.stdout.write("SG_TYPED_SMOKE_PASS");
   return 0;
 }
