@@ -1,0 +1,4 @@
+# path|exact stdout (no newline)
+tests/run-ledger.ores|SG_RUN_LEDGER_PASS
+tests/run-cancellation.ores|SG_RUN_CANCEL_PASS
+tests/run-budget.ores|SG_RUN_BUDGET_PASS

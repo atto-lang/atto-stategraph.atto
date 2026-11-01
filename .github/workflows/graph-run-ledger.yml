@@ -1,0 +1,77 @@
+name: StateGraph actor run ledger - native acceptance
+on:
+  pull_request:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact tracked source and ledger contracts (not guest execution)
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: sh ci/test-run-ledger-source.sh
+      - name: Reject a fake zero-output compiler
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export ORESLANG_BIN=/usr/bin/true
+          export ORESLANG_COMPILER_SHA256="$(sha256sum /usr/bin/true | cut -d' ' -f1)"
+          if sh ci/verify-run-ledger-native.sh > "$RUNNER_TEMP/fake-native.log" 2>&1; then
+            echo 'UNSAFE: fake compiler was accepted' >&2
+            exit 1
+          fi
+          grep -Fq 'missing build_mode identity' "$RUNNER_TEMP/fake-native.log"
+          echo 'SG_RUN_LEDGER_FAKE_COMPILER_REJECTED source-only'
+      - name: Keep evidence categories separate
+        run: echo 'SOURCE-ONLY PASS is not Java/Graal or LLVM guest evidence.'
+  native-graal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Native Java/Graal admission and all three guest programs
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ORESLANG_BIN: ${{ vars.ORESLANG_GRAAL_BIN }}
+          ORESLANG_COMPILER_SHA256: ${{ vars.ORESLANG_GRAAL_SHA256 }}
+        run: |
+          set -euo pipefail
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          sh ci/verify-run-ledger-native.sh
+  native-llvm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Native LLVM admission and all three guest programs
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ORESLANG_BIN: ${{ vars.ORESLANG_LLVM_BIN }}
+          ORESLANG_COMPILER_SHA256: ${{ vars.ORESLANG_LLVM_SHA256 }}
+        run: |
+          set -euo pipefail
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          sh ci/verify-run-ledger-native.sh

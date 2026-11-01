@@ -1,0 +1,213 @@
+// Native Oreslang GraphRun admission/continuation ledger.
+// Pure immutable transitions for one actor-owned graph invocation.
+// This is NOT an actor scheduler, mailbox, durable store, or authentication layer.
+// The run's owning actor must be the SOLE writer and must issue unique receipts.
+define module run_ledger as
+  pub define class RunKey as
+    pub val String tenant;
+    pub val String run_id;
+    pub val int generation;
+    pub constructor(String tenant, String run_id, int generation) {
+      self.tenant = tenant;
+      self.run_id = run_id;
+      self.generation = generation;
+    }
+  end
+
+  // phase: 0=CREATED, 1=RUNNING, 2=COMPLETED, 3=CANCELLED, 4=FAILED.
+  // pending is a CREDIT COUNT, not a queue or ownership of pending payloads.
+  // in_flight is 0 when idle, otherwise the unique claim receipt number.
+  pub define class RunState as
+    pub val RunKey key;
+    pub val int phase;
+    pub val int version;
+    pub val int max_steps;
+    pub val int max_pending;
+    pub val int completed_steps;
+    pub val int pending;
+    pub val int in_flight;
+    pub val int next_receipt;
+
+    pub constructor(RunKey key, int phase, int version, int max_steps,
+                    int max_pending, int completed_steps, int pending,
+                    int in_flight, int next_receipt) {
+      self.key = key;
+      self.phase = phase;
+      self.version = version;
+      self.max_steps = max_steps;
+      self.max_pending = max_pending;
+      self.completed_steps = completed_steps;
+      self.pending = pending;
+      self.in_flight = in_flight;
+      self.next_receipt = next_receipt;
+    }
+  end
+
+  pub define class ClaimReceipt as
+    pub val RunKey key;
+    pub val int serial;
+    pub val int issued_version;
+    pub constructor(RunKey key, int serial, int issued_version) {
+      self.key = key;
+      self.serial = serial;
+      self.issued_version = issued_version;
+    }
+  end
+
+  pub define class Claimed as
+    pub val RunState state;
+    pub val ClaimReceipt receipt;
+    pub constructor(RunState state, ClaimReceipt receipt) {
+      self.state = state;
+      self.receipt = receipt;
+    }
+  end
+
+  fnc same_key(borrow RunKey left, borrow RunKey right): bool {
+    return left.tenant != "" && left.run_id != "" &&
+      left.generation > 0 &&
+      left.tenant == right.tenant &&
+      left.run_id == right.run_id &&
+      left.generation == right.generation;
+  }
+
+  fnc guard(borrow RunState state, borrow RunKey key,
+            int expected_version): bool {
+    return same_key(rt borrow state.key, rt borrow key) &&
+      state.version == expected_version &&
+      state.version > 0 && state.version < 2147483646;
+  }
+
+  fnc snapshot(borrow RunState state, int phase, int version,
+               int completed_steps, int pending, int in_flight,
+               int next_receipt): RunState {
+    return new RunState(
+      new RunKey(state.key.tenant, state.key.run_id, state.key.generation),
+      phase, version, state.max_steps, state.max_pending,
+      completed_steps, pending, in_flight, next_receipt);
+  }
+
+  pub fnc create(String tenant, String run_id, int generation,
+                 int max_steps, int max_pending): Result<RunState, String> {
+    if tenant == "" || run_id == "" || generation <= 0; then
+      return Err("invalid run identity");
+    fi
+    if max_steps < 1 || max_steps > 100000 ||
+      max_pending < 1 || max_pending > 1024; then
+      return Err("invalid run budget");
+    fi
+    return Ok(new RunState(new RunKey(tenant, run_id, generation),
+      0, 1, max_steps, max_pending, 0, 0, 0, 1));
+  }
+
+  pub fnc start(borrow RunState state, borrow RunKey key,
+                int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 0; then return Err("run already started"); fi
+    return Ok(snapshot(rt borrow state, 1, state.version + 1,
+      state.completed_steps, state.pending, state.in_flight,
+      state.next_receipt));
+  }
+
+  // Reserve one bounded unit of work. Caller must keep a real actor-local
+  // FIFO for payloads; this counter does not admit an arbitrary external send.
+  pub fnc enqueue(borrow RunState state, borrow RunKey key,
+                  int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 1; then return Err("run not active"); fi
+    if state.pending >= state.max_pending; then
+      return Err("mailbox credits exhausted");
+    fi
+    val int active = state.in_flight != 0 ? 1 : 0;
+    if state.completed_steps + state.pending + active >= state.max_steps; then
+      return Err("node-step budget exhausted");
+    fi
+    return Ok(snapshot(rt borrow state, 1, state.version + 1,
+      state.completed_steps, state.pending + 1, state.in_flight,
+      state.next_receipt));
+  }
+
+  // Exactly one outstanding logical node invocation; old receipts never
+  // reopen a finished/cancelled incarnation.
+  pub fnc claim(borrow RunState state, borrow RunKey key,
+                int expected_version): Result<Claimed, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 1 || state.pending <= 0 || state.in_flight != 0; then
+      return Err("no claimable node");
+    fi
+    if state.next_receipt <= 0 || state.next_receipt >= 2147483646; then
+      return Err("receipt serial exhausted");
+    fi
+    val int serial = state.next_receipt;
+    val int after_version = state.version + 1;
+    val RunState next = snapshot(rt borrow state, 1, after_version,
+      state.completed_steps, state.pending - 1,
+      serial, serial + 1);
+    return Ok(new Claimed(next,
+      new ClaimReceipt(
+        new RunKey(state.key.tenant, state.key.run_id, state.key.generation),
+        serial, after_version)));
+  }
+
+  // Publish one successful graph-state step only when it still belongs to
+  // this exact owner generation AND current outstanding receipt. A duplicate
+  // or post-cancellation publish is rejected with no new state returned.
+  pub fnc publish(borrow RunState state, borrow ClaimReceipt receipt,
+                  int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow receipt.key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 1 || state.in_flight == 0 ||
+      state.in_flight != receipt.serial ||
+      receipt.issued_version > state.version; then
+      return Err("unknown, duplicate or retired receipt");
+    fi
+    if state.completed_steps >= state.max_steps; then
+      return Err("node-step budget exhausted");
+    fi
+    return Ok(snapshot(rt borrow state, 1, state.version + 1,
+      state.completed_steps + 1, state.pending, 0, state.next_receipt));
+  }
+
+  // Cancellation is a fence on further publication. It is not a guarantee
+  // that an external or suspended worker has physically stopped.
+  pub fnc cancel(borrow RunState state, borrow RunKey key,
+                 int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 0 && state.phase != 1; then
+      return Err("run terminal");
+    fi
+    return Ok(snapshot(rt borrow state, 3, state.version + 1,
+      state.completed_steps, 0, 0, state.next_receipt));
+  }
+
+  pub fnc fail(borrow RunState state, borrow RunKey key,
+               int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 1; then return Err("run not active"); fi
+    return Ok(snapshot(rt borrow state, 4, state.version + 1,
+      state.completed_steps, 0, 0, state.next_receipt));
+  }
+
+  pub fnc finish(borrow RunState state, borrow RunKey key,
+                 int expected_version): Result<RunState, String> {
+    if !guard(rt borrow state, rt borrow key, expected_version); then
+      return Err("stale run identity or version");
+    fi
+    if state.phase != 1 || state.pending != 0 || state.in_flight != 0; then
+      return Err("run not quiescent");
+    fi
+    return Ok(snapshot(rt borrow state, 2, state.version + 1,
+      state.completed_steps, 0, 0, state.next_receipt));
+  }
+end

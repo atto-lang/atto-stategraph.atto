@@ -1,0 +1,47 @@
+// Bounded credits, step budget, receipt monotonicity, and terminal failures.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, fail, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("team", "run", 4);
+  val RunState seed = create("team", "run", 4, 2, 1).unwrap();
+  if enqueue(rt borrow seed, rt borrow key, 1).is_ok(); then return 1; fi
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  if finish(rt borrow running, rt borrow key, 2).is_err(); then return 2; fi
+
+  val RunState first = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  if enqueue(rt borrow first, rt borrow key, 3).is_ok(); then return 3; fi
+  val Claimed active = claim(rt borrow first, rt borrow key, 3).unwrap();
+  if active.state.pending != 0 || active.state.in_flight != 1; then return 4; fi
+  val RunState queued = enqueue(rt borrow active.state, rt borrow key, 4).unwrap();
+  if queued.pending != 1 || queued.in_flight != 1; then return 5; fi
+  if enqueue(rt borrow queued, rt borrow key, 5).is_ok(); then return 6; fi
+  if claim(rt borrow queued, rt borrow key, 5).is_ok(); then return 7; fi
+  if finish(rt borrow queued, rt borrow key, 5).is_ok(); then return 8; fi
+
+  val RunState committed = publish(
+    rt borrow queued, rt borrow active.receipt, 5).unwrap();
+  if committed.completed_steps != 1 || committed.pending != 1 ||
+     committed.in_flight != 0; then return 9; fi
+  val Claimed second = claim(rt borrow committed, rt borrow key, 6).unwrap();
+  if second.receipt.serial != 2 || second.state.next_receipt != 3; then return 10; fi
+  if publish(rt borrow second.state, rt borrow active.receipt, 7).is_ok(); then return 11; fi
+  val RunState last = publish(
+    rt borrow second.state, rt borrow second.receipt, 7).unwrap();
+  if last.completed_steps != 2 || last.pending != 0 ||
+     last.in_flight != 0 || last.version != 8; then return 12; fi
+  if enqueue(rt borrow last, rt borrow key, 8).is_ok(); then return 13; fi
+  val RunState done = finish(rt borrow last, rt borrow key, 8).unwrap();
+  if done.phase != 2 || done.completed_steps != 2; then return 14; fi
+
+  val RunState failure_seed = create("team", "failed", 5, 1, 1).unwrap();
+  val RunKey failure_key = new RunKey("team", "failed", 5);
+  val RunState failure_base = start(
+    rt borrow failure_seed, rt borrow failure_key, 1).unwrap();
+  val RunState broken = fail(rt borrow failure_base, rt borrow failure_key, 2).unwrap();
+  if broken.phase != 4; then return 15; fi
+  if enqueue(rt borrow broken, rt borrow failure_key, 3).is_ok(); then return 16; fi
+  if finish(rt borrow broken, rt borrow failure_key, 3).is_ok(); then return 17; fi
+  stdio.stdout.write("SG_RUN_BUDGET_PASS");
+  return 0;
+}

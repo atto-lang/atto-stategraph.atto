@@ -1,0 +1,48 @@
+// Per-run actor ledger: happy path, checked sequence and exactly one receipt.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val Result<RunState, String> created = create("tenant-a", "thread-1", 7, 2, 2);
+  if created.is_err(); then return 1; fi
+  val RunState s0 = created.unwrap();
+  val RunKey key = new RunKey("tenant-a", "thread-1", 7);
+  if s0.version != 1 || s0.phase != 0 || s0.pending != 0; then return 2; fi
+
+  val Result<RunState, String> began = start(rt borrow s0, rt borrow key, 1);
+  if began.is_err(); then return 3; fi
+  val RunState s1 = began.unwrap();
+  if s1.phase != 1 || s1.version != 2; then return 4; fi
+  val Result<RunState, String> enqueued = enqueue(rt borrow s1, rt borrow key, 2);
+  if enqueued.is_err(); then return 5; fi
+  val RunState s2 = enqueued.unwrap();
+  if s2.pending != 1 || s2.version != 3; then return 6; fi
+  val Result<Claimed, String> admitted = claim(rt borrow s2, rt borrow key, 3);
+  if admitted.is_err(); then return 7; fi
+  val Claimed receipt = admitted.unwrap();
+  if receipt.state.pending != 0 || receipt.state.in_flight != 1 ||
+     receipt.state.next_receipt != 2 || receipt.state.version != 4; then return 8; fi
+  if receipt.receipt.serial != 1 || receipt.receipt.issued_version != 4; then return 9; fi
+
+  // The inflight node must not be declared completed prematurely.
+  if finish(rt borrow receipt.state, rt borrow key, 4).is_ok(); then return 10; fi
+  val Result<RunState, String> applied = publish(
+    rt borrow receipt.state, rt borrow receipt.receipt, 4);
+  if applied.is_err(); then return 11; fi
+  val RunState s3 = applied.unwrap();
+  if s3.completed_steps != 1 || s3.in_flight != 0 || s3.version != 5; then return 12; fi
+  if publish(rt borrow s3, rt borrow receipt.receipt, 5).is_ok(); then return 13; fi
+
+  val Result<RunState, String> completed = finish(rt borrow s3, rt borrow key, 5);
+  if completed.is_err(); then return 14; fi
+  val RunState terminal = completed.unwrap();
+  if terminal.phase != 2 || terminal.version != 6 || terminal.completed_steps != 1; then
+    return 15;
+  fi
+  if enqueue(rt borrow terminal, rt borrow key, 6).is_ok(); then return 16; fi
+  if finish(rt borrow terminal, rt borrow key, 6).is_ok(); then return 17; fi
+  // Original immutable snapshot is never modified by a transition.
+  if s0.phase != 0 || s0.version != 1 || s0.pending != 0; then return 18; fi
+  stdio.stdout.write("SG_RUN_LEDGER_PASS");
+  return 0;
+}

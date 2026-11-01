@@ -1,0 +1,50 @@
+// Cancellation wins before publish. Identities and versions fence stale work.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, fail, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  if create("", "run", 1, 2, 1).is_ok(); then return 1; fi
+  if create("t", "", 1, 2, 1).is_ok(); then return 2; fi
+  if create("t", "r", 0, 2, 1).is_ok(); then return 3; fi
+  if create("t", "r", 1, 0, 1).is_ok(); then return 4; fi
+  if create("t", "r", 1, 2, 0).is_ok(); then return 5; fi
+  if create("t", "r", 1, 100001, 1).is_ok(); then return 6; fi
+  if create("t", "r", 1, 2, 1025).is_ok(); then return 7; fi
+
+  val RunState seed = create("tenant-a", "run-42", 2, 3, 2).unwrap();
+  val RunKey key = new RunKey("tenant-a", "run-42", 2);
+  val RunKey foreign = new RunKey("tenant-b", "run-42", 2);
+  val RunKey old_epoch = new RunKey("tenant-a", "run-42", 1);
+  if start(rt borrow seed, rt borrow foreign, 1).is_ok(); then return 8; fi
+  if start(rt borrow seed, rt borrow old_epoch, 1).is_ok(); then return 9; fi
+  if start(rt borrow seed, rt borrow key, 2).is_ok(); then return 10; fi
+
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState queued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val Claimed issued = claim(rt borrow queued, rt borrow key, 3).unwrap();
+  if claim(rt borrow issued.state, rt borrow key, 4).is_ok(); then return 11; fi
+
+  val ClaimReceipt forged = new ClaimReceipt(foreign, issued.receipt.serial, 4);
+  if publish(rt borrow issued.state, rt borrow forged, 4).is_ok(); then return 12; fi
+  val ClaimReceipt stale_gen = new ClaimReceipt(old_epoch, issued.receipt.serial, 4);
+  if publish(rt borrow issued.state, rt borrow stale_gen, 4).is_ok(); then return 13; fi
+  val ClaimReceipt unknown = new ClaimReceipt(key, 999, 4);
+  if publish(rt borrow issued.state, rt borrow unknown, 4).is_ok(); then return 14; fi
+
+  val RunState canceled = cancel(rt borrow issued.state, rt borrow key, 4).unwrap();
+  if canceled.phase != 3 || canceled.in_flight != 0 || canceled.pending != 0 ||
+     canceled.completed_steps != 0 || canceled.version != 5; then return 15; fi
+  if publish(rt borrow canceled, rt borrow issued.receipt, 5).is_ok(); then return 16; fi
+  if enqueue(rt borrow canceled, rt borrow key, 5).is_ok(); then return 17; fi
+  if claim(rt borrow canceled, rt borrow key, 5).is_ok(); then return 18; fi
+  if cancel(rt borrow canceled, rt borrow key, 5).is_ok(); then return 19; fi
+  if finish(rt borrow canceled, rt borrow key, 5).is_ok(); then return 20; fi
+  if fail(rt borrow canceled, rt borrow key, 5).is_ok(); then return 21; fi
+  // Canceling after a completed publish cannot erase previously committed work.
+  val RunState published = publish(
+    rt borrow issued.state, rt borrow issued.receipt, 4).unwrap();
+  val RunState stopped = cancel(rt borrow published, rt borrow key, 5).unwrap();
+  if stopped.completed_steps != 1 || stopped.phase != 3; then return 22; fi
+  stdio.stdout.write("SG_RUN_CANCEL_PASS");
+  return 0;
+}
