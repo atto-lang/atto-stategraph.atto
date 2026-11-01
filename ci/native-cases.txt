@@ -14,3 +14,5 @@ tests/native/branch-at-start.ores|sg:branch-at-start-ok
 tests/native/budget-frontier.ores|sg:budget-frontier-ok
 tests/native/direct-end.ores|sg:direct-end-ok
 tests/native/patch-precedence.ores|sg:patch-precedence-ok
+tests/native/invalid-reducer-registry.ores|sg:invalid-reducer-registry-ok
+tests/native/reducer-declaration-order.ores|sg:reducer-declaration-order-ok

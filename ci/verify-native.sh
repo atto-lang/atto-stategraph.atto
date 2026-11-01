@@ -62,5 +62,5 @@ while IFS='|' read -r path expected || [ -n "$path" ]; do
   printf 'SG_NATIVE_CASE_PASS path=%s blob=%s\n' "$path" "$(git rev-parse "HEAD:$path")"
 done <ci/native-cases.txt
 tracked="$(git ls-files 'tests/native/*.ores' | wc -l | tr -d ' ')"
-[ "$count" -eq 15 ] && [ "$tracked" -eq "$count" ] || die "manifest/source coverage mismatch"
+[ "$count" -eq 17 ] && [ "$tracked" -eq "$count" ] || die "manifest/source coverage mismatch"
 printf 'SG_NATIVE_PASS count=%s source_sha=%s compiler_sha256=%s\n' "$count" "$head" "$digest"

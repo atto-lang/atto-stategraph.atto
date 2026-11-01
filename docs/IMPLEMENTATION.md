@@ -71,3 +71,15 @@ and structurally inspectable, but do not claim compiler-backed passes until
 a stepful Graal and LLVM guest receipt exists. The untouched userland program
 sources remain the intended contract for Wasm, Cranelift and .NET as those
 compilers gain the missing generic/functional/collection lowerings.
+
+
+## Fail-closed entire reducer registry (pure Oreslang)
+
+Patch application now rejects empty or duplicate *declared reducer* channel
+names even when no pending writes reference those reducers. A malformed
+reducer registry cannot be accepted simply because a batch was empty. The
+new `invalid-reducer-registry.ores` and `reducer-declaration-order.ores`
+cases verify this validation and ensure declaration order does not alter
+userland patch order. The serial native suite now requires **17** programs.
+This is authored source without compiler-backed guest receipts; every
+backend must still run the same guest programs before parity claims.

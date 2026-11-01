@@ -41,6 +41,24 @@ define module patches as
       fi
     done
 
+    // Validate the entire reducer registry, even when this batch has zero
+    // writes. An unused duplicate/empty key must not silently be admitted
+    // and later become observable when another patch arrives.
+    for const reducer of reducers do
+      if reducer.channel == ""; do
+        return new PatchBatchResult<S>("invalid_reducer", initial, 0);
+      fi
+      let int declared = 0;
+      for const other of reducers do
+        if other.channel == reducer.channel; do
+          declared = declared + 1;
+        fi
+      done
+      if declared != 1; do
+        return new PatchBatchResult<S>("duplicate_reducer", initial, 0);
+      fi
+    done
+
     // A separate preflight pass ensures a detected schema conflict cannot
     // execute user code or partially change the returned state.
     for const write of writes do
