@@ -25,6 +25,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Source-only policy
         run: sh ci/audit-source.sh
+      - name: Host-only receipt mutation validation (not guest proof)
+        shell: bash
+        run: |
+          bash -n ci/verify-native-harness.sh ci/verify-native-harness-receipts.sh ci/test-native-harness-receipts.sh
+          bash ci/test-native-harness-receipts.sh
       - name: Evidence boundary
         run: echo 'SOURCE_POLICY_ONLY - not native compilation or execution'
   native-graal:
