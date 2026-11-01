@@ -19,10 +19,19 @@ fnc rejects_unknown_edge_target(): TestOutcome {
   return expect_equal_string(graph.validate(), "unknown_target",
     "unregistered graph destinations must not be invoked");
 }
+fnc reserved_end_node_denied(): TestOutcome {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[new Node<String>("END", identity)],
+    arr[new Edge<String>("START", "END", always)], 4
+  );
+  return expect_equal_string(graph.validate(), "reserved_node",
+    "terminal sentinel cannot be registered as a callable node");
+}
 pub routine main(): void {
   val TestSuite suite = new TestSuite("stategraph", arr[
     new TestCase("rejects_zero_step_budget", rejects_zero_step_budget, false, ""),
-    new TestCase("rejects_unknown_edge_target", rejects_unknown_edge_target, false, "")
+    new TestCase("rejects_unknown_edge_target", rejects_unknown_edge_target, false, ""),
+    new TestCase("reserved_end_node_denied", reserved_end_node_denied, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
