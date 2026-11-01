@@ -20,11 +20,19 @@ jobs:
         shell: bash
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EXPECTED_TREE_SHA: ${{ vars.SG_EXPECTED_TREE_SHA }}
+          PINNED_SOURCE_TREE_SHA: ${{ vars.SG_EXPECTED_TREE_SHA }}
           ORESLANG_BIN: ${{ vars.ORESLANG_GRAAL_BIN }}
           ORESLANG_COMPILER_SHA256: ${{ vars.ORESLANG_GRAAL_SHA256 }}
         run: |
           set -euo pipefail
+          # GitHub's event SHA is an external identity of the checked-out
+          # source commit; derive its exact tree from that pinned commit.
+          tree="$(git rev-parse --verify "${EXPECTED_SOURCE_SHA}^{tree}")"
+          if [ -n "$PINNED_SOURCE_TREE_SHA" ] && [ "$PINNED_SOURCE_TREE_SHA" != "$tree" ]; then
+            echo 'NO_NATIVE_EVIDENCE: external source tree pin mismatched' >&2
+            exit 1
+          fi
+          export EXPECTED_TREE_SHA="$tree"
           sh ci/verify-supersteps-native.sh
   supersteps-native-llvm:
     runs-on: ubuntu-24.04
@@ -38,9 +46,17 @@ jobs:
         shell: bash
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EXPECTED_TREE_SHA: ${{ vars.SG_EXPECTED_TREE_SHA }}
+          PINNED_SOURCE_TREE_SHA: ${{ vars.SG_EXPECTED_TREE_SHA }}
           ORESLANG_BIN: ${{ vars.ORESLANG_LLVM_BIN }}
           ORESLANG_COMPILER_SHA256: ${{ vars.ORESLANG_LLVM_SHA256 }}
         run: |
           set -euo pipefail
+          # GitHub's event SHA is an external identity of the checked-out
+          # source commit; derive its exact tree from that pinned commit.
+          tree="$(git rev-parse --verify "${EXPECTED_SOURCE_SHA}^{tree}")"
+          if [ -n "$PINNED_SOURCE_TREE_SHA" ] && [ "$PINNED_SOURCE_TREE_SHA" != "$tree" ]; then
+            echo 'NO_NATIVE_EVIDENCE: external source tree pin mismatched' >&2
+            exit 1
+          fi
+          export EXPECTED_TREE_SHA="$tree"
           sh ci/verify-supersteps-native.sh

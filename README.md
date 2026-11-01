@@ -158,3 +158,9 @@ References: LangGraph StateGraph and Pregel superstep execution.
 ## Expanded native acceptance inventory
 
 The v0 serial engine now has **11 distinct native `.ores` guest fixtures**, including new negative tests for invalid/duplicate reducers, missing/invalid graph builder entries and minimum/maximum step budgets. The v1 superstep engine has **5 independent native guests** (the existing 46-gate smoke plus resume, topology, allowlist copy/route denial, and patch validation). Together the manifests account for **16 native guest programs**. These counts describe authored test programs, not observed native compiler passes. Real execution requires exact-source identity and actual job steps from both Graal and LLVM. See `ci/native-cases.txt` and `ci/supersteps-cases.txt`.
+
+### Same-repository CI pinning and executed-step evidence (2026-10-31)
+
+For first-party GitHub Actions jobs, `EXPECTED_SOURCE_SHA` is taken from the PR-head/push event and checkout is pinned to that exact commit. The workflow derives `EXPECTED_TREE_SHA` from that trusted commit object. An optional `SG_EXPECTED_TREE_SHA` repository variable can further restrict the accepted tree; if populated and different, CI fails. **Cross-organization mirrors must always receive the original source Git tree as an independently authorized external pin**; a mirror commit's self-derived tree alone is insufficient to establish that it matches private source.
+
+A real GitHub-hosted runner has now executed the source-only checks, but the native jobs still refuse admission because `ORESLANG_GRAAL_BIN`/`ORESLANG_GRAAL_SHA256` and `ORESLANG_LLVM_BIN`/`ORESLANG_LLVM_SHA256` are not configured as executable trusted compiler paths/digests. This is a compiler-provisioning blocker, not an observed native source failure. See PR #4 for exact-head CI links. No native pass has been claimed.
