@@ -52,3 +52,32 @@ All source-only checks must be distinguished from real Java/Graal/LLVM native gu
 - Compiler-supported, **actor-owned** `state`/critical `handle_state` bridge, checked under both compiler backends.
 - Bounded mailbox payloads, generation-safe cancellation fencing across suspension, actual supervisor/worker DONE evidence and fair work admission.
 - Versioned serialized checkpoint/outbox, replay receipt provenance, tenant-controlled authorization, human interrupts and actor-parallel work with deterministic reducers.
+
+
+## Extended native regression matrix (source-authored)
+
+The native manifest now enumerates **14** independently executable `.ores` guest programs: the original three plus eleven new fixtures:
+`run-identity`, `run-versions`, `run-receipts`, `run-credits`,
+`run-terminals`, `run-cancel-created`, `run-failure-active`,
+`run-malformed`, `run-boundaries`, `run-generations`, and
+`run-issue-version`.
+
+These exercise cross-tenant and cross-generation isolation, optimistic
+concurrency, receipt replay and issue-version tampering, fair logical credits,
+terminal idempotence, cancellation from CREATED, failure with queued and active
+work, malformed public snapshot rejection, exactly bounded steps, incarnation
+reuse and later publication after other queue admissions. Each program returns
+a unique nonzero exit status on its first failed condition and emits an exact
+success marker only on success. The test manifest is now required to cover the
+complete tracked `tests/run-*.ores` set; missing/duplicate tests reject in
+both source-only and native harnesses.
+
+The ledger guard additionally rejects forged CREATED snapshots, inconsistent
+active-receipt serial/claim versions, impossible in-flight totals and versions
+that predate a started run. This is structural validation, **not** an
+unforgeable capability: a malicious caller who can construct arbitrary
+`RunState` and `ClaimReceipt` values can still fabricate valid-looking
+records. The actor owner must keep those records private and authorize
+messages before invoking transitions. Treat compiler-backed execution and
+independent review as hard gates; GitHub Actions source-only success is not
+guest evidence.

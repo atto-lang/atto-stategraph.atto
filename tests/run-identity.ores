@@ -1,0 +1,34 @@
+// Never let another run, tenant, or generation advance this coordinator.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey owner = new RunKey("alpha", "run-a", 11);
+  val RunKey other_tenant = new RunKey("beta", "run-a", 11);
+  val RunKey other_run = new RunKey("alpha", "run-b", 11);
+  val RunKey old_generation = new RunKey("alpha", "run-a", 10);
+  val RunKey blank = new RunKey("", "run-a", 11);
+  val RunState initial = create("alpha", "run-a", 11, 4, 2).unwrap();
+  if start(rt borrow initial, rt borrow other_tenant, 1).is_ok(); then return 1; fi
+  if start(rt borrow initial, rt borrow other_run, 1).is_ok(); then return 2; fi
+  if start(rt borrow initial, rt borrow old_generation, 1).is_ok(); then return 3; fi
+  if start(rt borrow initial, rt borrow blank, 1).is_ok(); then return 4; fi
+  val RunState running = start(rt borrow initial, rt borrow owner, 1).unwrap();
+  if enqueue(rt borrow running, rt borrow other_tenant, 2).is_ok(); then return 5; fi
+  if enqueue(rt borrow running, rt borrow other_run, 2).is_ok(); then return 6; fi
+  if cancel(rt borrow running, rt borrow old_generation, 2).is_ok(); then return 7; fi
+  if finish(rt borrow running, rt borrow blank, 2).is_ok(); then return 8; fi
+  val RunState queued = enqueue(rt borrow running, rt borrow owner, 2).unwrap();
+  val Claimed issued = claim(rt borrow queued, rt borrow owner, 3).unwrap();
+  val ClaimReceipt foreign = new ClaimReceipt(other_tenant, 1, 4);
+  val ClaimReceipt wrong_run = new ClaimReceipt(other_run, 1, 4);
+  val ClaimReceipt wrong_gen = new ClaimReceipt(old_generation, 1, 4);
+  if publish(rt borrow issued.state, rt borrow foreign, 4).is_ok(); then return 9; fi
+  if publish(rt borrow issued.state, rt borrow wrong_run, 4).is_ok(); then return 10; fi
+  if publish(rt borrow issued.state, rt borrow wrong_gen, 4).is_ok(); then return 11; fi
+  if issued.state.in_flight != 1 || issued.state.completed_steps != 0; then return 12; fi
+  val RunState published = publish(rt borrow issued.state, rt borrow issued.receipt, 4).unwrap();
+  if published.completed_steps != 1 || published.in_flight != 0; then return 13; fi
+  stdio.stdout.write("SG_RUN_IDENTITY_PASS");
+  return 0;
+}

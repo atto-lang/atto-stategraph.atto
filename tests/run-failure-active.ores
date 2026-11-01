@@ -1,0 +1,26 @@
+// A worker failure retires both its receipt and all queued work credits.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, fail, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("t", "failure", 3);
+  val RunState seed = create("t", "failure", 3, 4, 2).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState one = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val RunState two = enqueue(rt borrow one, rt borrow key, 3).unwrap();
+  val Claimed active = claim(rt borrow two, rt borrow key, 4).unwrap();
+  if active.state.pending != 1 || active.state.in_flight != 1; then return 1; fi
+  val RunState failed = fail(rt borrow active.state, rt borrow key, 5).unwrap();
+  if failed.phase != 4 || failed.version != 6; then return 2; fi
+  if failed.pending != 0 || failed.in_flight != 0 ||
+     failed.claim_version != 0 || failed.completed_steps != 0; then return 3; fi
+  if publish(rt borrow failed, rt borrow active.receipt, 6).is_ok(); then return 4; fi
+  if claim(rt borrow failed, rt borrow key, 6).is_ok(); then return 5; fi
+  if enqueue(rt borrow failed, rt borrow key, 6).is_ok(); then return 6; fi
+  if finish(rt borrow failed, rt borrow key, 6).is_ok(); then return 7; fi
+  if cancel(rt borrow failed, rt borrow key, 6).is_ok(); then return 8; fi
+  if fail(rt borrow failed, rt borrow key, 6).is_ok(); then return 9; fi
+  if active.state.phase != 1 || active.state.pending != 1; then return 10; fi
+  stdio.stdout.write("SG_RUN_FAILURE_ACTIVE_PASS");
+  return 0;
+}

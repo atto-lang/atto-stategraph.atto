@@ -2,3 +2,14 @@
 tests/run-ledger.ores|SG_RUN_LEDGER_PASS
 tests/run-cancellation.ores|SG_RUN_CANCEL_PASS
 tests/run-budget.ores|SG_RUN_BUDGET_PASS
+tests/run-identity.ores|SG_RUN_IDENTITY_PASS
+tests/run-versions.ores|SG_RUN_VERSIONS_PASS
+tests/run-receipts.ores|SG_RUN_RECEIPTS_PASS
+tests/run-credits.ores|SG_RUN_CREDITS_PASS
+tests/run-terminals.ores|SG_RUN_TERMINALS_PASS
+tests/run-cancel-created.ores|SG_RUN_CANCEL_CREATED_PASS
+tests/run-failure-active.ores|SG_RUN_FAILURE_ACTIVE_PASS
+tests/run-malformed.ores|SG_RUN_MALFORMED_PASS
+tests/run-boundaries.ores|SG_RUN_BOUNDARIES_PASS
+tests/run-generations.ores|SG_RUN_GENERATIONS_PASS
+tests/run-issue-version.ores|SG_RUN_ISSUE_VERSION_PASS

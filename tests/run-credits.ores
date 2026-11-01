@@ -1,0 +1,33 @@
+// Physical mailbox capacity is separate; ledger credits are conservative.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("t", "bounded", 1);
+  val RunState seed = create("t", "bounded", 1, 5, 2).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState one = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val RunState two = enqueue(rt borrow one, rt borrow key, 3).unwrap();
+  if two.pending != 2 || two.max_pending != 2; then return 1; fi
+  if enqueue(rt borrow two, rt borrow key, 4).is_ok(); then return 2; fi
+  val Claimed active = claim(rt borrow two, rt borrow key, 4).unwrap();
+  if active.state.pending != 1 || active.state.in_flight != 1; then return 3; fi
+  val RunState three = enqueue(rt borrow active.state, rt borrow key, 5).unwrap();
+  if three.pending != 2 || three.in_flight != 1; then return 4; fi
+  if enqueue(rt borrow three, rt borrow key, 6).is_ok(); then return 5; fi
+  if claim(rt borrow three, rt borrow key, 6).is_ok(); then return 6; fi
+  val RunState completed_one = publish(rt borrow three, rt borrow active.receipt, 6).unwrap();
+  if completed_one.completed_steps != 1 || completed_one.pending != 2; then return 7; fi
+  val Claimed active_two = claim(rt borrow completed_one, rt borrow key, 7).unwrap();
+  val RunState completed_two = publish(
+    rt borrow active_two.state, rt borrow active_two.receipt, 8).unwrap();
+  if completed_two.completed_steps != 2 || completed_two.pending != 1; then return 8; fi
+  val Claimed active_three = claim(rt borrow completed_two, rt borrow key, 9).unwrap();
+  val RunState completed_three = publish(
+    rt borrow active_three.state, rt borrow active_three.receipt, 10).unwrap();
+  if completed_three.pending != 0 || completed_three.completed_steps != 3; then return 9; fi
+  val RunState done = finish(rt borrow completed_three, rt borrow key, 11).unwrap();
+  if done.phase != 2; then return 10; fi
+  stdio.stdout.write("SG_RUN_CREDITS_PASS");
+  return 0;
+}

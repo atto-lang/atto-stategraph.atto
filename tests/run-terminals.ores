@@ -1,0 +1,30 @@
+// All terminal phases reject replay, reopening and future publication.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, fail, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("owner", "finished", 2);
+  val RunState seed = create("owner", "finished", 2, 2, 1).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState ended = finish(rt borrow running, rt borrow key, 2).unwrap();
+  if ended.phase != 2 || ended.version != 3; then return 1; fi
+  if start(rt borrow ended, rt borrow key, 3).is_ok(); then return 2; fi
+  if enqueue(rt borrow ended, rt borrow key, 3).is_ok(); then return 3; fi
+  if claim(rt borrow ended, rt borrow key, 3).is_ok(); then return 4; fi
+  if finish(rt borrow ended, rt borrow key, 3).is_ok(); then return 5; fi
+  if fail(rt borrow ended, rt borrow key, 3).is_ok(); then return 6; fi
+  if cancel(rt borrow ended, rt borrow key, 3).is_ok(); then return 7; fi
+
+  val RunKey fail_key = new RunKey("owner", "failed", 3);
+  val RunState failed_seed = create("owner", "failed", 3, 2, 1).unwrap();
+  val RunState failed_run = start(rt borrow failed_seed, rt borrow fail_key, 1).unwrap();
+  val RunState failed = fail(rt borrow failed_run, rt borrow fail_key, 2).unwrap();
+  if failed.phase != 4 || failed.version != 3; then return 8; fi
+  if start(rt borrow failed, rt borrow fail_key, 3).is_ok(); then return 9; fi
+  if enqueue(rt borrow failed, rt borrow fail_key, 3).is_ok(); then return 10; fi
+  if finish(rt borrow failed, rt borrow fail_key, 3).is_ok(); then return 11; fi
+  if cancel(rt borrow failed, rt borrow fail_key, 3).is_ok(); then return 12; fi
+  if fail(rt borrow failed, rt borrow fail_key, 3).is_ok(); then return 13; fi
+  stdio.stdout.write("SG_RUN_TERMINALS_PASS");
+  return 0;
+}

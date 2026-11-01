@@ -1,0 +1,26 @@
+// Claim version must bind the exact outstanding receipt issue epoch.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("t", "claim-epoch", 1);
+  val RunState seed = create("t", "claim-epoch", 1, 4, 3).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState queued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val Claimed issued = claim(rt borrow queued, rt borrow key, 3).unwrap();
+  if issued.receipt.issued_version != issued.state.claim_version; then return 1; fi
+  val ClaimReceipt early = new ClaimReceipt(key, issued.receipt.serial, 3);
+  if publish(rt borrow issued.state, rt borrow early, 4).is_ok(); then return 2; fi
+  val ClaimReceipt late = new ClaimReceipt(key, issued.receipt.serial, 5);
+  if publish(rt borrow issued.state, rt borrow late, 4).is_ok(); then return 3; fi
+  val RunState another = enqueue(rt borrow issued.state, rt borrow key, 4).unwrap();
+  val RunState more = enqueue(rt borrow another, rt borrow key, 5).unwrap();
+  if more.claim_version != 4 || more.version != 6; then return 4; fi
+  if publish(rt borrow more, rt borrow late, 6).is_ok(); then return 5; fi
+  val RunState published = publish(rt borrow more, rt borrow issued.receipt, 6).unwrap();
+  if published.version != 7 || published.claim_version != 0 ||
+     published.pending != 2 || published.completed_steps != 1; then return 6; fi
+  if publish(rt borrow published, rt borrow issued.receipt, 7).is_ok(); then return 7; fi
+  stdio.stdout.write("SG_RUN_ISSUE_VERSION_PASS");
+  return 0;
+}

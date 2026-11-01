@@ -1,0 +1,28 @@
+// Optimistic concurrency must reject every stale snapshot after transitions.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("tenant", "serial", 5);
+  val RunState seed = create("tenant", "serial", 5, 3, 2).unwrap();
+  if start(rt borrow seed, rt borrow key, 0).is_ok(); then return 1; fi
+  if start(rt borrow seed, rt borrow key, 2).is_ok(); then return 2; fi
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  if running.version != 2 || seed.version != 1; then return 3; fi
+  if enqueue(rt borrow running, rt borrow key, 1).is_ok(); then return 4; fi
+  val RunState queued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  if queued.version != 3 || running.pending != 0; then return 5; fi
+  if claim(rt borrow queued, rt borrow key, 2).is_ok(); then return 6; fi
+  val Claimed active = claim(rt borrow queued, rt borrow key, 3).unwrap();
+  if active.state.version != 4 || queued.pending != 1; then return 7; fi
+  if publish(rt borrow active.state, rt borrow active.receipt, 3).is_ok(); then return 8; fi
+  if publish(rt borrow active.state, rt borrow active.receipt, 5).is_ok(); then return 9; fi
+  val RunState published = publish(rt borrow active.state, rt borrow active.receipt, 4).unwrap();
+  if published.version != 5 || active.state.version != 4; then return 10; fi
+  if finish(rt borrow published, rt borrow key, 4).is_ok(); then return 11; fi
+  val RunState completed = finish(rt borrow published, rt borrow key, 5).unwrap();
+  if completed.version != 6 || completed.phase != 2; then return 12; fi
+  if start(rt borrow completed, rt borrow key, 6).is_ok(); then return 13; fi
+  stdio.stdout.write("SG_RUN_VERSIONS_PASS");
+  return 0;
+}

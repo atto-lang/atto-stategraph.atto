@@ -1,0 +1,35 @@
+// Reusing a run_id with a new generation never revives an old claim.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey old_key = new RunKey("acme", "same-run", 100);
+  val RunState old_seed = create("acme", "same-run", 100, 2, 1).unwrap();
+  val RunState old_running = start(rt borrow old_seed, rt borrow old_key, 1).unwrap();
+  val RunState old_queued = enqueue(rt borrow old_running, rt borrow old_key, 2).unwrap();
+  val Claimed old_claim = claim(rt borrow old_queued, rt borrow old_key, 3).unwrap();
+  val RunState old_canceled = cancel(rt borrow old_claim.state, rt borrow old_key, 4).unwrap();
+  if old_canceled.phase != 3; then return 1; fi
+
+  val RunKey next_key = new RunKey("acme", "same-run", 101);
+  val RunState next_seed = create("acme", "same-run", 101, 2, 1).unwrap();
+  val RunState next_running = start(rt borrow next_seed, rt borrow next_key, 1).unwrap();
+  val RunState next_queued = enqueue(rt borrow next_running, rt borrow next_key, 2).unwrap();
+  val Claimed next_claim = claim(rt borrow next_queued, rt borrow next_key, 3).unwrap();
+  if old_claim.receipt.serial != next_claim.receipt.serial; then return 2; fi
+  if publish(rt borrow next_claim.state, rt borrow old_claim.receipt, 4).is_ok(); then
+    return 3;
+  fi
+  if publish(rt borrow old_canceled, rt borrow next_claim.receipt, 5).is_ok(); then
+    return 4;
+  fi
+  val RunState committed = publish(
+    rt borrow next_claim.state, rt borrow next_claim.receipt, 4).unwrap();
+  if committed.completed_steps != 1 || committed.key.generation != 101; then
+    return 5;
+  fi
+  val RunState finished = finish(rt borrow committed, rt borrow next_key, 5).unwrap();
+  if finished.phase != 2; then return 6; fi
+  stdio.stdout.write("SG_RUN_GENERATIONS_PASS");
+  return 0;
+}

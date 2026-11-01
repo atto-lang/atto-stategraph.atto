@@ -147,3 +147,15 @@ References: LangGraph StateGraph and Pregel superstep execution.
 See [the actor run ledger design and gates](docs/ACTOR_RUN_LEDGER.md) and [the separate verification workflow](.github/workflows/graph-run-ledger.yml).
 
 The **experimental** `examples/experimental/graph_run_coordinator.ores` sketches a concrete `define isolated actor` with actor-owned `state`, critical `handle_state` transitions, and cancellation-rejection smoke flow. It has **not** been admitted by an Oreslang compiler and is intentionally excluded from the native acceptance manifest. This source is not a claim of working actor scheduling.
+
+
+### Expanded GraphRun tests
+
+Fourteen native Oreslang `tests/run-*.ores` programs now cover lifecycle
+transitions, tenant/generation isolation, strict optimistic versions, claimed
+receipt replay, bounded queue credits, cancellation/failure retirement,
+malformed snapshots, maximum step budgets, and generation reuse. The
+`ci/run-ledger-cases.txt` manifest and both harnesses fail closed on
+missing/duplicate test coverage. They remain *authored tests*, not accepted
+compiler-backed passes, until the exact PR head executes on both approved
+Java/Graal and LLVM compilers.

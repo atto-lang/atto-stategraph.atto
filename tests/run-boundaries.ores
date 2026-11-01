@@ -1,0 +1,31 @@
+// Exact acceptance boundaries: no budget or receipt wrap.
+import class RunKey, RunState, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, finish from "../src/run_ledger";
+
+pub routine main(): int {
+  if create("t", "r", 1, 1, 1).is_err(); then return 1; fi
+  if create("t", "r", 1, 100000, 1024).is_err(); then return 2; fi
+  if create("t", "r", 1, -1, 1).is_ok(); then return 3; fi
+  if create("t", "r", 1, 100001, 1).is_ok(); then return 4; fi
+  if create("t", "r", 1, 1, 1025).is_ok(); then return 5; fi
+  if create("t", "r", 1, 1, -1).is_ok(); then return 6; fi
+  val RunKey key = new RunKey("t", "single", 1);
+  val RunState seed = create("t", "single", 1, 1, 1).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState queued = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  if enqueue(rt borrow queued, rt borrow key, 3).is_ok(); then return 7; fi
+  val Claimed active = claim(rt borrow queued, rt borrow key, 3).unwrap();
+  if enqueue(rt borrow active.state, rt borrow key, 4).is_ok(); then return 8; fi
+  val RunState published = publish(
+    rt borrow active.state, rt borrow active.receipt, 4).unwrap();
+  if enqueue(rt borrow published, rt borrow key, 5).is_ok(); then return 9; fi
+  val RunState terminal = finish(rt borrow published, rt borrow key, 5).unwrap();
+  if terminal.phase != 2 || terminal.completed_steps != 1; then return 10; fi
+
+  val RunKey serial_key = new RunKey("t", "serial-exhaust", 1);
+  val RunState serial_stop = new RunState(
+    serial_key, 1, 3, 2, 1, 0, 1, 0, 0, 2147483646);
+  if claim(rt borrow serial_stop, rt borrow serial_key, 3).is_ok(); then return 11; fi
+  stdio.stdout.write("SG_RUN_BOUNDARIES_PASS");
+  return 0;
+}

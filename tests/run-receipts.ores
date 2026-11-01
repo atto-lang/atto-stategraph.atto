@@ -1,0 +1,34 @@
+// A claim remains usable after queue/version changes, never after publication.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../src/run_ledger";
+import fnc create, start, enqueue, claim, publish, cancel from "../src/run_ledger";
+
+pub routine main(): int {
+  val RunKey key = new RunKey("tenant", "receipt", 8);
+  val RunState seed = create("tenant", "receipt", 8, 4, 3).unwrap();
+  val RunState running = start(rt borrow seed, rt borrow key, 1).unwrap();
+  val RunState first = enqueue(rt borrow running, rt borrow key, 2).unwrap();
+  val Claimed active = claim(rt borrow first, rt borrow key, 3).unwrap();
+  if active.receipt.serial != 1 || active.receipt.issued_version != 4 ||
+     active.state.claim_version != 4; then return 1; fi
+  val RunState with_pending = enqueue(rt borrow active.state, rt borrow key, 4).unwrap();
+  if with_pending.version != 5 || with_pending.claim_version != 4; then return 2; fi
+  val ClaimReceipt changed_issue = new ClaimReceipt(key, 1, 5);
+  if publish(rt borrow with_pending, rt borrow changed_issue, 5).is_ok(); then return 3; fi
+  val ClaimReceipt zero_issue = new ClaimReceipt(key, 1, 0);
+  if publish(rt borrow with_pending, rt borrow zero_issue, 5).is_ok(); then return 4; fi
+  val ClaimReceipt wrong_serial = new ClaimReceipt(key, 2, 4);
+  if publish(rt borrow with_pending, rt borrow wrong_serial, 5).is_ok(); then return 5; fi
+  val RunState applied = publish(rt borrow with_pending, rt borrow active.receipt, 5).unwrap();
+  if applied.completed_steps != 1 || applied.version != 6 ||
+     applied.claim_version != 0 || applied.in_flight != 0; then return 6; fi
+  if publish(rt borrow applied, rt borrow active.receipt, 6).is_ok(); then return 7; fi
+  val Claimed second = claim(rt borrow applied, rt borrow key, 6).unwrap();
+  if second.receipt.serial != 2 || second.receipt.issued_version != 7; then return 8; fi
+  if publish(rt borrow second.state, rt borrow active.receipt, 7).is_ok(); then return 9; fi
+  val RunState second_done = publish(rt borrow second.state, rt borrow second.receipt, 7).unwrap();
+  if second_done.completed_steps != 2 || second_done.next_receipt != 3; then return 10; fi
+  val RunState stopped = cancel(rt borrow second_done, rt borrow key, 8).unwrap();
+  if publish(rt borrow stopped, rt borrow second.receipt, 9).is_ok(); then return 11; fi
+  stdio.stdout.write("SG_RUN_RECEIPTS_PASS");
+  return 0;
+}

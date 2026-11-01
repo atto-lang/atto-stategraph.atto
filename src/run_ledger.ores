@@ -100,6 +100,28 @@ define module run_ledger as
        (state.pending != 0 || state.in_flight != 0); then
       return false;
     fi
+    // No transition can restore a CREATED run or silently invent work.
+    if state.phase == 0 &&
+       (state.version != 1 || state.completed_steps != 0 ||
+        state.next_receipt != 1); then
+      return false;
+    fi
+    if state.phase == 1 && state.version < 2; then
+      return false;
+    fi
+    // In a live run every claimed step is either committed or currently
+    // outstanding. Do not accept replayed/restored snapshots with a forged
+    // receipt counter or a claim issued in the future.
+    if state.phase == 1 &&
+       state.next_receipt != state.completed_steps + active + 1; then
+      return false;
+    fi
+    if state.in_flight != 0 &&
+       (state.in_flight != state.next_receipt - 1 ||
+        state.claim_version < 4 ||
+        state.claim_version > state.version); then
+      return false;
+    fi
     return true;
   }
 
