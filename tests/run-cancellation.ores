@@ -30,6 +30,12 @@ pub routine main(): int {
   if publish(rt borrow issued.state, rt borrow stale_gen, 4).is_ok(); then return 13; fi
   val ClaimReceipt unknown = new ClaimReceipt(key, 999, 4);
   if publish(rt borrow issued.state, rt borrow unknown, 4).is_ok(); then return 14; fi
+  val ClaimReceipt tampered_version = new ClaimReceipt(
+    key, issued.receipt.serial, 3);
+  if publish(rt borrow issued.state, rt borrow tampered_version, 4).is_ok(); then return 23; fi
+  val RunState forged_snapshot = new RunState(
+    key, 1, 4, 3, 2, 0, 0, 1, 0, 2);
+  if cancel(rt borrow forged_snapshot, rt borrow key, 4).is_ok(); then return 24; fi
 
   val RunState canceled = cancel(rt borrow issued.state, rt borrow key, 4).unwrap();
   if canceled.phase != 3 || canceled.in_flight != 0 || canceled.pending != 0 ||

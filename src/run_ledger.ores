@@ -26,11 +26,12 @@ define module run_ledger as
     pub val int completed_steps;
     pub val int pending;
     pub val int in_flight;
+    pub val int claim_version;
     pub val int next_receipt;
 
     pub constructor(RunKey key, int phase, int version, int max_steps,
                     int max_pending, int completed_steps, int pending,
-                    int in_flight, int next_receipt) {
+                    int in_flight, int claim_version, int next_receipt) {
       self.key = key;
       self.phase = phase;
       self.version = version;
@@ -39,6 +40,7 @@ define module run_ledger as
       self.completed_steps = completed_steps;
       self.pending = pending;
       self.in_flight = in_flight;
+      self.claim_version = claim_version;
       self.next_receipt = next_receipt;
     }
   end
@@ -73,18 +75,41 @@ define module run_ledger as
 
   fnc guard(borrow RunState state, borrow RunKey key,
             int expected_version): bool {
-    return same_key(rt borrow state.key, rt borrow key) &&
-      state.version == expected_version &&
-      state.version > 0 && state.version < 2147483646;
+    if !same_key(rt borrow state.key, rt borrow key) ||
+      state.version != expected_version ||
+      state.version <= 0 || state.version >= 2147483646; then
+      return false;
+    fi
+    if state.phase < 0 || state.phase > 4 ||
+       state.max_steps <= 0 || state.max_steps > 100000 ||
+       state.max_pending <= 0 || state.max_pending > 1024 ||
+       state.completed_steps < 0 || state.completed_steps > state.max_steps ||
+       state.pending < 0 || state.pending > state.max_pending ||
+       state.in_flight < 0 || state.claim_version < 0 ||
+       state.next_receipt <= 0 || state.next_receipt > 2147483646; then
+      return false;
+    fi
+    if (state.in_flight == 0) != (state.claim_version == 0); then
+      return false;
+    fi
+    val int active = state.in_flight == 0 ? 0 : 1;
+    if state.completed_steps + state.pending + active > state.max_steps; then
+      return false;
+    fi
+    if state.phase != 1 &&
+       (state.pending != 0 || state.in_flight != 0); then
+      return false;
+    fi
+    return true;
   }
 
   fnc snapshot(borrow RunState state, int phase, int version,
                int completed_steps, int pending, int in_flight,
-               int next_receipt): RunState {
+               int claim_version, int next_receipt): RunState {
     return new RunState(
       new RunKey(state.key.tenant, state.key.run_id, state.key.generation),
       phase, version, state.max_steps, state.max_pending,
-      completed_steps, pending, in_flight, next_receipt);
+      completed_steps, pending, in_flight, claim_version, next_receipt);
   }
 
   pub fnc create(String tenant, String run_id, int generation,
@@ -97,7 +122,7 @@ define module run_ledger as
       return Err("invalid run budget");
     fi
     return Ok(new RunState(new RunKey(tenant, run_id, generation),
-      0, 1, max_steps, max_pending, 0, 0, 0, 1));
+      0, 1, max_steps, max_pending, 0, 0, 0, 0, 1));
   }
 
   pub fnc start(borrow RunState state, borrow RunKey key,
@@ -108,7 +133,7 @@ define module run_ledger as
     if state.phase != 0; then return Err("run already started"); fi
     return Ok(snapshot(rt borrow state, 1, state.version + 1,
       state.completed_steps, state.pending, state.in_flight,
-      state.next_receipt));
+      state.claim_version, state.next_receipt));
   }
 
   // Reserve one bounded unit of work. Caller must keep a real actor-local
@@ -128,7 +153,7 @@ define module run_ledger as
     fi
     return Ok(snapshot(rt borrow state, 1, state.version + 1,
       state.completed_steps, state.pending + 1, state.in_flight,
-      state.next_receipt));
+      state.claim_version, state.next_receipt));
   }
 
   // Exactly one outstanding logical node invocation; old receipts never
@@ -148,7 +173,7 @@ define module run_ledger as
     val int after_version = state.version + 1;
     val RunState next = snapshot(rt borrow state, 1, after_version,
       state.completed_steps, state.pending - 1,
-      serial, serial + 1);
+      serial, after_version, serial + 1);
     return Ok(new Claimed(next,
       new ClaimReceipt(
         new RunKey(state.key.tenant, state.key.run_id, state.key.generation),
@@ -165,14 +190,14 @@ define module run_ledger as
     fi
     if state.phase != 1 || state.in_flight == 0 ||
       state.in_flight != receipt.serial ||
-      receipt.issued_version > state.version; then
+      receipt.issued_version != state.claim_version; then
       return Err("unknown, duplicate or retired receipt");
     fi
     if state.completed_steps >= state.max_steps; then
       return Err("node-step budget exhausted");
     fi
     return Ok(snapshot(rt borrow state, 1, state.version + 1,
-      state.completed_steps + 1, state.pending, 0, state.next_receipt));
+      state.completed_steps + 1, state.pending, 0, 0, state.next_receipt));
   }
 
   // Cancellation is a fence on further publication. It is not a guarantee
@@ -186,7 +211,7 @@ define module run_ledger as
       return Err("run terminal");
     fi
     return Ok(snapshot(rt borrow state, 3, state.version + 1,
-      state.completed_steps, 0, 0, state.next_receipt));
+      state.completed_steps, 0, 0, 0, state.next_receipt));
   }
 
   pub fnc fail(borrow RunState state, borrow RunKey key,
@@ -196,7 +221,7 @@ define module run_ledger as
     fi
     if state.phase != 1; then return Err("run not active"); fi
     return Ok(snapshot(rt borrow state, 4, state.version + 1,
-      state.completed_steps, 0, 0, state.next_receipt));
+      state.completed_steps, 0, 0, 0, state.next_receipt));
   }
 
   pub fnc finish(borrow RunState state, borrow RunKey key,
@@ -208,6 +233,6 @@ define module run_ledger as
       return Err("run not quiescent");
     fi
     return Ok(snapshot(rt borrow state, 2, state.version + 1,
-      state.completed_steps, 0, 0, state.next_receipt));
+      state.completed_steps, 0, 0, 0, state.next_receipt));
   }
 end

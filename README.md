@@ -138,7 +138,7 @@ References: LangGraph StateGraph and Pregel superstep execution.
 `src/run_ledger.ores` is a new pure, native Oreslang **single-run ownership state machine** for future graph coordinator actors. It is additive and does not change the serial `sg.StateGraph<S>` API or `SuperstepGraph<S>`.
 
 - `RunKey(tenant, run_id, generation)` binds run identity; these strings are correlation keys, **not authentication**.
-- `RunState` uses explicit phase, optimistic version, bounded pending credits, one active receipt, monotonically increasing receipt IDs and completed-step budgets.
+- `RunState` uses explicit phase, optimistic version, bounded pending credits, one active receipt, monotonically increasing receipt IDs with exact claim-issue version matching and completed-step budgets.
 - `start`, `enqueue`, `claim`, `publish`, `cancel`, `fail`, and `finish` return immutable new-state results or explicit errors. Cancellation fences late/duplicate publication.
 - `claim` admits at most one outstanding logical node. The ledger is **not itself an actor**, mailbox, supervisor or persistent checkpoint.
 - `tests/run-ledger.ores`, `tests/run-cancellation.ores`, and `tests/run-budget.ores` are three new native Oreslang guest acceptance programs. Real executed Java/Graal and LLVM compiler results remain required; the CI source-only check must not be credited as native evidence.
