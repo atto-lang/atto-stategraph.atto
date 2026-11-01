@@ -45,13 +45,35 @@ fnc missing_start_edge_is_rejected(): TestOutcome {
     "graph must have a START transition");
 }
 
+fnc reserved_end_source_is_rejected(): TestOutcome {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[new Node<String>("a", identity)],
+    arr[new Edge<String>("START", "a", always),
+        new Edge<String>("a", "END", always),
+        new Edge<String>("END", "a", always)], 8
+  );
+  return expect_equal_string(graph.validate(), "reserved_edge",
+    "END must never be allowed to emit a new transition");
+}
+
+fnc above_maximum_step_budget_is_rejected(): TestOutcome {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[new Node<String>("a", identity)],
+    arr[new Edge<String>("START", "a", always), new Edge<String>("a", "END", always)], 10001
+  );
+  return expect_equal_string(graph.validate(), "invalid_budget",
+    "graph step budget above the fixed maximum must fail closed");
+}
+
 pub routine main(): void {
   val TestSuite suite = new TestSuite("stategraph", arr[
     new TestCase("rejects_zero_step_budget", rejects_zero_step_budget, false, ""),
     new TestCase("rejects_unknown_edge_target", rejects_unknown_edge_target, false, ""),
     new TestCase("reserved_end_node_denied", reserved_end_node_denied, false, ""),
     new TestCase("duplicate_node_name_is_rejected", duplicate_node_name_is_rejected, false, ""),
-    new TestCase("missing_start_edge_is_rejected", missing_start_edge_is_rejected, false, "")
+    new TestCase("missing_start_edge_is_rejected", missing_start_edge_is_rejected, false, ""),
+    new TestCase("reserved_end_source_is_rejected", reserved_end_source_is_rejected, false, ""),
+    new TestCase("above_maximum_step_budget_is_rejected", above_maximum_step_budget_is_rejected, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
