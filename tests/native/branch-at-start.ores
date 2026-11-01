@@ -1,0 +1,31 @@
+// START can choose END without invoking an otherwise valid registered node.
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc urgent(int state): bool { return state == 1; }
+fnc ordinary(int state): bool { return state == 0; }
+fnc always(int state): bool { return true; }
+fnc increment(String node, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("work", increment)],
+    arr[
+      new Edge<int>("START", "work", urgent),
+      new Edge<int>("START", "END", ordinary),
+      new Edge<int>("work", "END", always)
+    ], 2
+  );
+  val RunResult<int> direct = graph.run(0);
+  val RunResult<int> executed = graph.run(1);
+  val RunResult<int> unmatched = graph.run(3);
+  if direct.status == "completed" && direct.steps == 0 &&
+     direct.state == 0 && executed.status == "completed" &&
+     executed.steps == 1 && executed.state == 2 &&
+     unmatched.status == "unmatched_edge" && unmatched.steps == 0 &&
+     unmatched.state == 3 && unmatched.cursor == "START"; do
+    stdio.stdout.write("sg:branch-at-start-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:branch-at-start-fail");
+  return;
+}

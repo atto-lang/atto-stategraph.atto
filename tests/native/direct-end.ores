@@ -1,0 +1,23 @@
+// START -> END is a valid zero-step graph; no phantom callbacks or writes.
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+
+pub routine main(): void {
+  val List<Node<int>> empty_nodes = arr[];
+  val StateGraph<int> graph = new StateGraph<int>(
+    empty_nodes,
+    arr[new Edge<int>("START", "END", always)], 7
+  );
+  val RunResult<int> first = graph.run(42);
+  val RunResult<int> second = graph.run(0);
+  if first.status == "completed" && first.state == 42 &&
+     first.steps == 0 && first.cursor == "END" &&
+     second.status == "completed" && second.state == 0 &&
+     second.steps == 0 && second.cursor == "END"; do
+    stdio.stdout.write("sg:direct-end-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:direct-end-fail");
+  return;
+}

@@ -58,3 +58,16 @@ duplicate reducers and missing reducer schema. The native-case manifest now
 requires **11** guest programs, but source presence is not guest execution.
 Both genuine Graal and LLVM compilers must still compile the exact same
 userland source; CI attempts with zero job steps do not establish acceptance.
+
+
+## Serial StateGraph additional native guest edge cases
+
+Four more userland Oreslang programs exercise a direct `START -> END`
+without running callbacks, a deterministic START fork with unmatched
+routing rollback, patch preflight failure precedence and atomicity, and
+step-budget frontier publication between successive nodes. The manifest
+requires **15** serial native Oreslang guests. These assertions are authored
+and structurally inspectable, but do not claim compiler-backed passes until
+a stepful Graal and LLVM guest receipt exists. The untouched userland program
+sources remain the intended contract for Wasm, Cranelift and .NET as those
+compilers gain the missing generic/functional/collection lowerings.

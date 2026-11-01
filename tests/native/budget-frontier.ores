@@ -1,0 +1,29 @@
+// Work committed before reaching the budget boundary remains visible.
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+fnc update(String node, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val List<Node<int>> nodes = arr[
+    new Node<int>("first", update), new Node<int>("second", update)
+  ];
+  val List<Edge<int>> edges = arr[
+    new Edge<int>("START", "first", always),
+    new Edge<int>("first", "second", always),
+    new Edge<int>("second", "END", always)
+  ];
+  val StateGraph<int> one_step = new StateGraph<int>(nodes, edges, 1);
+  val StateGraph<int> two_steps = new StateGraph<int>(nodes, edges, 2);
+  val RunResult<int> bounded = one_step.run(40);
+  val RunResult<int> complete = two_steps.run(40);
+  if bounded.status == "step_limit" && bounded.state == 41 &&
+     bounded.steps == 1 && bounded.cursor == "second" &&
+     complete.status == "completed" && complete.state == 42 &&
+     complete.steps == 2 && complete.cursor == "END"; do
+    stdio.stdout.write("sg:budget-frontier-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:budget-frontier-fail");
+  return;
+}
