@@ -1,0 +1,51 @@
+// In-memory continuation, monotonic receipts, and invalid/forged rejection.
+import class SuperstepGraph, StatePatch, GraphResult from "../../src/supersteps";
+
+define class Count as
+  pub val int n;
+end
+fnc clone_count(Count state) -> Count { return new Count(state.n); }
+fnc inc(Count state) -> Count { return new Count(state.n + 1); }
+fnc step(Count state) -> StatePatch<Count> {
+  val StatePatch<Count> patch = new StatePatch<Count>();
+  patch.reduce("n", inc);
+  return patch;
+}
+fnc next(Count state) -> String {
+  if state.n >= 3 then return "__end__"; fi
+  return "tick";
+}
+pub routine main() -> int {
+  val SuperstepGraph<Count> graph = new SuperstepGraph<Count>(clone_count);
+  if !graph.add_node("tick", step) then return 1; fi
+  if !graph.add_reducer("n") then return 2; fi
+  if !graph.set_entry_point("tick") then return 3; fi
+  val Array<String> allowed = new Array<String>();
+  allowed.add("tick");
+  allowed.add("__end__");
+  if !graph.add_conditional_edges("tick", next, allowed) then return 4; fi
+  if !graph.compile() then return 5; fi
+  val GraphResult<Count> paused = graph.invoke(new Count(0), 2);
+  if paused.ok || paused.error_code != 7 then return 6; fi
+  if paused.state.n != 2 || paused.supersteps != 2 then return 7; fi
+  if paused.pending.size() != 1 || paused.pending.get(0) != "tick" then return 8; fi
+  val GraphResult<Count> completed = graph.resume(paused, 2);
+  if !completed.ok || completed.error_code != 0 then return 9; fi
+  if completed.state.n != 3 || completed.supersteps != 3 then return 10; fi
+  if completed.pending.size() != 0 then return 11; fi
+  val GraphResult<Count> forbidden = graph.resume(completed, 1);
+  if forbidden.ok || forbidden.error_code != 12 then return 12; fi
+  val GraphResult<Count> too_many = graph.resume(paused, 100000);
+  if too_many.ok || too_many.error_code != 2 then return 13; fi
+  if too_many.state.n != 2 then return 14; fi
+  val Array<String> injected = new Array<String>();
+  injected.add("missing-node");
+  val GraphResult<Count> forgery = new GraphResult<Count>(
+    false, 7, new Count(100), 2, injected
+  );
+  val GraphResult<Count> rejected = graph.resume(forgery, 1);
+  if rejected.ok || rejected.error_code != 12 then return 15; fi
+  if rejected.state.n != 100 then return 16; fi
+  stdio.stdout.write("SG_RESUME_PASS");
+  return 0;
+}

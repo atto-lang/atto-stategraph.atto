@@ -1,14 +1,14 @@
 # Native Oreslang StateGraph (sg)
 
-**Status: experimental draft; guest compiler execution not yet verified.**
+**Status: experimental, merged source without verified native guest execution.**
 This is the staged integration after PR #1 merged into main: the typed serial
-StateGraph<S> API remains source-compatible, while PR #2 adds a typed
+StateGraph<S> API remains source-compatible, while PR #2 merged a typed
 SuperstepGraph<S> with snapshot/patch/superstep semantics. The entire graph engine is authored
 in Oreslang, not Python, JavaScript, Java, or an FFI orchestration layer.
 
 ## Typed API
 
-The merged v0 API is sg.StateGraph<S> in src/stategraph.ores. This additive, draft execution engine is SuperstepGraph<S> in src/supersteps.ores, with caller-owned application state S. Both are typed, but the two execution APIs are intentionally separate until compiler acceptance and a compatibility migration.
+The merged v0 API is sg.StateGraph<S> in src/stategraph.ores. This additive, experimental execution engine is SuperstepGraph<S> in src/supersteps.ores, with caller-owned application state S. Both are typed, but the two execution APIs are intentionally separate until compiler acceptance and a compatibility migration.
 A required Fnc<S(S)> copy_state function must return a fully independent state
 snapshot; use immutable value objects or deep-copy all mutable nested members.
 The engine cannot statically enforce that user-supplied copy callbacks are pure.
@@ -81,6 +81,27 @@ The runtime does not roll back external callback side effects, exceptions,
 actor sends or database writes. Checked arithmetic is not part of the generic
 patch engine. This is a sequential prototype (not actor-parallel or durable).
 
+## In-memory continuation and strict admission
+
+`SuperstepGraph<S>.resume(previous, additional_steps)` continues a run only when
+`previous.error_code == 7` (step-budget exhaustion), `previous.ok == false`,
+the pending frontier is nonempty, all distinct pending nodes are registered,
+and the cumulative step budget remains bounded. It returns cumulative
+`supersteps` and reuses the same compiled graph. This also rejects a
+completed run, unknown/duplicate pending nodes and invalid budgets.
+
+**Security limitation:** `GraphResult<S>` is caller-constructible; this is **not**
+an authenticated checkpoint. The API cannot prove the previous state came from
+the same graph or tenant, cannot attest a deep-copy callback, and cannot
+make replay of external side effects safe. Use it only for caller-owned
+in-memory workflows pinned to one immutable graph generation. Do not persist
+or expose the result as a capability token.
+
+Compiler-side topology validation now rejects nodes without any outgoing edge
+or conditional route. The executor bounds total node callback invocations per
+call to 100,000, in addition to the superstep budget, to mitigate high fan-out
+work amplification.
+
 ## Error codes
 
 | Code | Meaning |
@@ -96,16 +117,18 @@ patch engine. This is a sequential prototype (not actor-parallel or durable).
 | 8 | Dead-end without END |
 | 9 | END mixed with pending work in the same superstep |
 | 10 | Reserved for invalid topology (compile() currently returns bool) |
+| 11 | Node-execution work budget exhausted; no candidate state commit |
+| 12 | Invalid/untrusted in-memory resume request or pending frontier |
 
 ## Verification and security
 
-The additive superstep Oreslang smoke program lives in tests/smoke.ores. The merged v0 serial kernel retains its original tests/native fixtures and ci/verify-native.sh. It exercises 46
+The superstep Oreslang smoke program lives in `tests/smoke.ores`, with four additional independent native guests in `tests/supersteps/`. The merged v0 serial kernel retains its original tests/native fixtures and ci/verify-native.sh. It exercises 46
 assertion gates: typed state and patch construction, two-node reducer merge,
 fan-in coalescing, snapshot isolation, conflicting writes, bad reducer policies,
 post-update routing, bad routes, bounded cycles, invalid graph definitions,
 duplicate patch writes, ambiguous END handling and builder immutability.
 
-Run sh ci/verify-supersteps-native.sh with EXPECTED_TREE_SHA (the Git SHA-1 **tree object**,
+Run sh ci/verify-supersteps-native.sh with EXPECTED_SOURCE_SHA (the checked-out exact commit), EXPECTED_TREE_SHA (the Git SHA-1 **tree object**,
 not the commit SHA), ORESLANG_BIN (absolute path to a trusted native compiler),
 and ORESLANG_COMPILER_SHA256 (64 hex characters) set. It rejects missing or
 mismatched tree/compiler identities, dirty files, symlinks, untracked source,
@@ -125,9 +148,13 @@ job steps and guest output, not merely a completed Actions run.
 ### Explicitly outstanding
 
 An executed Java/GraalVM source compiler run, LLVM/.NET/Forge/Wasm acceptance,
-native actor worker scheduling, cancellation, typed errors, deep snapshot
+native actor worker scheduling, cancellation, authenticated durable checkpoints, typed errors, deep snapshot
 semantics audit, durable checkpoint storage, interrupts, retries, streaming,
 dynamic Send, subgraphs, and AI provider adapters. Do not promote this draft to
 production before native guest evidence exists.
 
 References: LangGraph StateGraph and Pregel superstep execution.
+
+## Expanded native acceptance inventory
+
+The v0 serial engine now has **11 distinct native `.ores` guest fixtures**, including new negative tests for invalid/duplicate reducers, missing/invalid graph builder entries and minimum/maximum step budgets. The v1 superstep engine has **5 independent native guests** (the existing 46-gate smoke plus resume, topology, allowlist copy/route denial, and patch validation). Together the manifests account for **16 native guest programs**. These counts describe authored test programs, not observed native compiler passes. Real execution requires exact-source identity and actual job steps from both Graal and LLVM. See `ci/native-cases.txt` and `ci/supersteps-cases.txt`.

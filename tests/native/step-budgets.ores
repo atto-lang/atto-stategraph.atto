@@ -1,0 +1,26 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+fnc always(int state): bool { return true; }
+fnc step(String name, int state): int { return state + 1; }
+pub routine main(): void {
+  val List<Node<int>> nodes = arr[new Node<int>("cycle", step)];
+  val List<Edge<int>> edges = arr[
+    new Edge<int>("START", "cycle", always),
+    new Edge<int>("cycle", "cycle", always)
+  ];
+  val StateGraph<int> zero = new StateGraph<int>(nodes, edges, 0);
+  val StateGraph<int> oversized = new StateGraph<int>(nodes, edges, 10001);
+  val StateGraph<int> bounded = new StateGraph<int>(nodes, edges, 1);
+  val RunResult<int> a = zero.run(9);
+  val RunResult<int> b = oversized.run(9);
+  val RunResult<int> c = bounded.run(9);
+  if a.status == "invalid_graph:invalid_budget" &&
+     b.status == "invalid_graph:invalid_budget" &&
+     a.state == 9 && b.state == 9 &&
+     c.status == "step_limit" && c.state == 10 &&
+     c.steps == 1 && c.cursor == "cycle"; do
+    stdio.stdout.write("sg:step-budgets-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:step-budgets-fail");
+  return;
+}

@@ -1,0 +1,36 @@
+// Reject invalid patch mode before any write is published.
+import class SuperstepGraph, StatePatch, GraphResult from "../../src/supersteps";
+define class State as
+  pub val int n;
+end
+fnc clone_state(State s) -> State { return new State(s.n); }
+fnc update(State s) -> State { return new State(s.n + 1); }
+fnc bad_patch(State s) -> StatePatch<State> {
+  val StatePatch<State> result = new StatePatch<State>();
+  result.add_update("n", 2, update);
+  return result;
+}
+fnc good_patch(State s) -> StatePatch<State> {
+  val StatePatch<State> result = new StatePatch<State>();
+  result.set("n", update);
+  return result;
+}
+pub routine main() -> int {
+  val SuperstepGraph<State> graph = new SuperstepGraph<State>(clone_state);
+  if !graph.add_node("bad", bad_patch) then return 1; fi
+  if !graph.set_entry_point("bad") then return 2; fi
+  if !graph.set_finish_point("bad") then return 3; fi
+  if !graph.compile() then return 4; fi
+  val GraphResult<State> invalid = graph.invoke(new State(12), 2);
+  if invalid.ok || invalid.error_code != 3 then return 5; fi
+  if invalid.state.n != 12 || invalid.supersteps != 0 then return 6; fi
+  val SuperstepGraph<State> ok = new SuperstepGraph<State>(clone_state);
+  if !ok.add_node("good", good_patch) then return 7; fi
+  if !ok.set_entry_point("good") then return 8; fi
+  if !ok.set_finish_point("good") then return 9; fi
+  if !ok.compile() then return 10; fi
+  val GraphResult<State> ran = ok.invoke(new State(12), 1);
+  if !ran.ok || ran.state.n != 13 then return 11; fi
+  stdio.stdout.write("SG_PATCH_VALIDATION_PASS");
+  return 0;
+}

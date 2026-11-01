@@ -1,0 +1,6 @@
+# path|exact_stdout_no_newline
+tests/smoke.ores|SG_TYPED_SMOKE_PASS
+tests/supersteps/resume.ores|SG_RESUME_PASS
+tests/supersteps/topology.ores|SG_TOPOLOGY_PASS
+tests/supersteps/allowlist.ores|SG_ALLOWLIST_PASS
+tests/supersteps/patch-validation.ores|SG_PATCH_VALIDATION_PASS

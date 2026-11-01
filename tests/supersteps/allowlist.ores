@@ -1,0 +1,35 @@
+// Branch allowlist is copied when the branch is registered: caller mutation cannot grant routes.
+import class SuperstepGraph, StatePatch, GraphResult from "../../src/supersteps";
+define class State as
+  pub val int n;
+end
+fnc clone_state(State s) -> State { return new State(s.n); }
+fnc noop(State s) -> StatePatch<State> { return new StatePatch<State>(); }
+fnc unauthorized(State s) -> String { return "forged"; }
+fnc allowed(State s) -> String { return "__end__"; }
+pub routine main() -> int {
+  val SuperstepGraph<State> graph = new SuperstepGraph<State>(clone_state);
+  if !graph.add_node("entry", noop) then return 1; fi
+  if !graph.add_node("forged", noop) then return 2; fi
+  if !graph.set_entry_point("entry") then return 3; fi
+  val Array<String> targets = new Array<String>();
+  targets.add("__end__");
+  if !graph.add_conditional_edges("entry", unauthorized, targets) then return 4; fi
+  targets.add("forged");
+  if !graph.set_finish_point("forged") then return 5; fi
+  if !graph.compile() then return 6; fi
+  val GraphResult<State> denied = graph.invoke(new State(9), 4);
+  if denied.ok || denied.error_code != 6 then return 7; fi
+  if denied.state.n != 9 || denied.supersteps != 0 then return 8; fi
+  val SuperstepGraph<State> yes = new SuperstepGraph<State>(clone_state);
+  if !yes.add_node("entry", noop) then return 9; fi
+  if !yes.set_entry_point("entry") then return 10; fi
+  val Array<String> only_end = new Array<String>();
+  only_end.add("__end__");
+  if !yes.add_conditional_edges("entry", allowed, only_end) then return 11; fi
+  if !yes.compile() then return 12; fi
+  val GraphResult<State> done = yes.invoke(new State(4), 2);
+  if !done.ok || done.state.n != 4 || done.supersteps != 1 then return 13; fi
+  stdio.stdout.write("SG_ALLOWLIST_PASS");
+  return 0;
+}

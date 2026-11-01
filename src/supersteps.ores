@@ -94,7 +94,7 @@ define pub class SuperstepGraph<S> as
 
   pub add_node(mut self)(String name, Fnc<StatePatch<S>(S)> action) -> bool {
     if self.compiled || self.nodes.size() >= 1024 then return false; fi
-    if name == "" || name == "__start__" || name == "__end__" then return false; fi
+    if name == "" || name == "__start__" || name == "__end__" || name == "START" || name == "END" then return false; fi
     if self.has_node(name) then return false; fi
     self.nodes.add(new GraphNode<S>(name, action));
     return true;
@@ -185,6 +185,18 @@ define pub class SuperstepGraph<S> as
         if target != "__end__" && !self.has_node(target) then return false; fi
       done
     done
+    // Reject complete topology with un-routable nodes before invoking callbacks.
+    for let i = 0; i < self.nodes.size(); i++ do
+      val String name = self.nodes.get(i).name;
+      let bool has_route = false;
+      for let e = 0; e < self.edges.size(); e++ do
+        if self.edges.get(e).source == name then has_route = true; fi
+      done
+      for let b = 0; b < self.branches.size(); b++ do
+        if self.branches.get(b).source == name then has_route = true; fi
+      done
+      if !has_route then return false; fi
+    done
     self.compiled = true;
     return true;
   }
@@ -208,8 +220,47 @@ define pub class SuperstepGraph<S> as
       fi
     done
 
+    return self.run_pending(initial, entry, max_steps, 0);
+  }
+
+  // Memory-only continuation from a bounded superstep exhaustion.
+  // THIS IS NOT an authenticated/durable checkpoint: GraphResult is forgeable.
+  // The caller must own the state and pin the exact graph definition/generation.
+  pub resume(GraphResult<S> prior, int additional_steps) -> GraphResult<S> {
+    val Array<String> none = new Array<String>();
+    if !self.compiled || prior.ok || prior.error_code != 7 ||
+       prior.supersteps < 0 || prior.supersteps > 100000 then
+      return new GraphResult<S>(false, 12, self.copy_state(prior.state), prior.supersteps, none);
+    fi
+    if additional_steps < 1 || additional_steps > 100000 ||
+       additional_steps > 100000 - prior.supersteps then
+      return new GraphResult<S>(false, 2, self.copy_state(prior.state), prior.supersteps, none);
+    fi
+    if prior.pending.size() == 0 || prior.pending.size() > 1024 then
+      return new GraphResult<S>(false, 12, self.copy_state(prior.state), prior.supersteps, none);
+    fi
+    val Array<String> admitted = new Array<String>();
+    for let i = 0; i < prior.pending.size(); i++ do
+      val String name = prior.pending.get(i);
+      if !self.has_node(name) then
+        return new GraphResult<S>(false, 12, self.copy_state(prior.state), prior.supersteps, none);
+      fi
+      for let j = 0; j < admitted.size(); j++ do
+        if admitted.get(j) == name then
+          return new GraphResult<S>(false, 12, self.copy_state(prior.state), prior.supersteps, none);
+        fi
+      done
+      admitted.add(name);
+    done
+    return self.run_pending(prior.state, admitted, additional_steps, prior.supersteps);
+  }
+
+  // Internal execution core: only compiled+validated frontiers are admitted.
+  // prior_steps counts earlier committed supersteps for cumulative receipts.
+  run_pending(S initial, Array<String> initial_frontier, int max_steps, int prior_steps) -> GraphResult<S> {
     let S current = self.copy_state(initial);
-    let Array<String> frontier = entry;
+    let Array<String> frontier = initial_frontier;
+    let int node_calls = 0;
     for let step = 0; step < max_steps; step++ do
       // All active nodes see private copies of ONE committed state version.
       val Array<StatePatch<S>> patches = new Array<StatePatch<S>>();
@@ -218,9 +269,13 @@ define pub class SuperstepGraph<S> as
         for let n = 0; n < self.nodes.size(); n++ do
           val GraphNode<S> node = self.nodes.get(n);
           if node.name == name then
+            if node_calls >= 100000 then
+              return new GraphResult<S>(false, 11, self.copy_state(current), prior_steps + step, frontier);
+            fi
+            node_calls = node_calls + 1;
             val StatePatch<S> patch = node.action(self.copy_state(current));
             if !patch.is_valid() then
-              return new GraphResult<S>(false, 3, self.copy_state(current), step, frontier);
+              return new GraphResult<S>(false, 3, self.copy_state(current), prior_steps + step, frontier);
             fi
             patches.add(patch);
           fi
@@ -234,12 +289,12 @@ define pub class SuperstepGraph<S> as
         for let w = 0; w < patch.size(); w++ do
           val GraphWrite<S> update = patch.at(w);
           if (update.mode == 1) != self.is_reducer(update.key) then
-            return new GraphResult<S>(false, 4, self.copy_state(current), step, frontier);
+            return new GraphResult<S>(false, 4, self.copy_state(current), prior_steps + step, frontier);
           fi
           if update.mode == 0 then
             for let k = 0; k < exclusive_keys.size(); k++ do
               if exclusive_keys.get(k) == update.key then
-                return new GraphResult<S>(false, 5, self.copy_state(current), step, frontier);
+                return new GraphResult<S>(false, 5, self.copy_state(current), prior_steps + step, frontier);
               fi
             done
             exclusive_keys.add(update.key);
@@ -287,7 +342,7 @@ define pub class SuperstepGraph<S> as
               if chosen == branch.allowed_targets.get(j) then allowed = true; fi
             done
             if !allowed then
-              return new GraphResult<S>(false, 6, self.copy_state(current), step, frontier);
+              return new GraphResult<S>(false, 6, self.copy_state(current), prior_steps + step, frontier);
             fi
             if chosen == "__end__" then
               reached_end = true;
@@ -301,24 +356,24 @@ define pub class SuperstepGraph<S> as
           fi
         done
         if !routed then
-          return new GraphResult<S>(false, 8, self.copy_state(current), step, frontier);
+          return new GraphResult<S>(false, 8, self.copy_state(current), prior_steps + step, frontier);
         fi
       done
       // Disallow completion of one branch while other work is still live.
       // Later versions may adopt explicit LangGraph-like pending-task semantics.
       if reached_end && next_frontier.size() > 0 then
-        return new GraphResult<S>(false, 9, self.copy_state(current), step, frontier);
+        return new GraphResult<S>(false, 9, self.copy_state(current), prior_steps + step, frontier);
       fi
       // Publish only after ALL patches and routing decisions validate.
       current = candidate;
       if reached_end then
-        return new GraphResult<S>(true, 0, self.copy_state(current), step + 1, next_frontier);
+        return new GraphResult<S>(true, 0, self.copy_state(current), prior_steps + step + 1, next_frontier);
       fi
       if next_frontier.size() == 0 then
-        return new GraphResult<S>(false, 8, self.copy_state(current), step + 1, next_frontier);
+        return new GraphResult<S>(false, 8, self.copy_state(current), prior_steps + step + 1, next_frontier);
       fi
       frontier = next_frontier;
     done
-    return new GraphResult<S>(false, 7, self.copy_state(current), max_steps, frontier);
+    return new GraphResult<S>(false, 7, self.copy_state(current), prior_steps + max_steps, frontier);
   }
 end

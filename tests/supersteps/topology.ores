@@ -1,0 +1,34 @@
+// Compile rejects missing outgoing routes, missing entry and forbidden labels.
+import class SuperstepGraph, StatePatch, GraphResult from "../../src/supersteps";
+define class State as
+  pub val int n;
+end
+fnc clone_state(State s) -> State { return new State(s.n); }
+fnc noop(State s) -> StatePatch<State> { return new StatePatch<State>(); }
+fnc choose(State s) -> String { return "__end__"; }
+pub routine main() -> int {
+  val SuperstepGraph<State> empty = new SuperstepGraph<State>(clone_state);
+  if empty.compile() then return 1; fi
+  val SuperstepGraph<State> missing = new SuperstepGraph<State>(clone_state);
+  if !missing.add_node("only", noop) then return 2; fi
+  if !missing.set_entry_point("only") then return 3; fi
+  if missing.compile() then return 4; fi
+  if missing.add_node("END", noop) then return 5; fi
+  if missing.add_node("START", noop) then return 6; fi
+  if missing.add_node("__start__", noop) then return 7; fi
+  if missing.add_node("__end__", noop) then return 8; fi
+  if !missing.set_finish_point("only") then return 9; fi
+  if !missing.compile() then return 10; fi
+  if missing.add_node("late", noop) then return 11; fi
+  val GraphResult<State> ran = missing.invoke(new State(8), 1);
+  if !ran.ok || ran.state.n != 8 || ran.supersteps != 1 then return 12; fi
+  val SuperstepGraph<State> branch = new SuperstepGraph<State>(clone_state);
+  if !branch.add_node("only", noop) then return 13; fi
+  if !branch.set_entry_point("only") then return 14; fi
+  val Array<String> targets = new Array<String>();
+  targets.add("ghost");
+  if !branch.add_conditional_edges("only", choose, targets) then return 15; fi
+  if branch.compile() then return 16; fi
+  stdio.stdout.write("SG_TOPOLOGY_PASS");
+  return 0;
+}

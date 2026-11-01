@@ -1,0 +1,30 @@
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+fnc plus(int current, int change): int { return current + change; }
+fnc main_checks(): bool {
+  val List<StateReducer<int, int>> reducers = arr[
+    new StateReducer<int, int>("score", plus)
+  ];
+  val PatchBatchResult<int> empty = apply_batch<int, int>(5, arr[], reducers);
+  if empty.status != "applied" || empty.state != 5 || empty.applied != 0; do return false; fi
+  val PatchBatchResult<int> invalid = apply_batch<int, int>(
+    5, arr[new StatePatch<int>("", 1)], reducers
+  );
+  if invalid.status != "invalid_channel" || invalid.state != 5 || invalid.applied != 0; do return false; fi
+  val PatchBatchResult<int> duplicated_reducer = apply_batch<int, int>(
+    5,
+    arr[new StatePatch<int>("score", 3)],
+    arr[new StateReducer<int, int>("score", plus), new StateReducer<int, int>("score", plus)]
+  );
+  if duplicated_reducer.status != "duplicate_reducer" ||
+     duplicated_reducer.state != 5 || duplicated_reducer.applied != 0; do return false; fi
+  return true;
+}
+pub routine main(): void {
+  if main_checks(); do
+    stdio.stdout.write("sg:patch-admission-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:patch-admission-fail");
+  return;
+}

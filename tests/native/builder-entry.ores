@@ -1,0 +1,42 @@
+import class GraphBuilder, BuildResult from "../../src/builder";
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+fnc always(int state): bool { return true; }
+fnc increase(String name, int state): int { return state + 1; }
+pub routine main(): void {
+  val GraphBuilder<int> ambiguous = new GraphBuilder<int>(
+    arr[new Node<int>("a", increase), new Node<int>("b", increase)],
+    arr[
+      new Edge<int>("START", "a", always),
+      new Edge<int>("START", "b", always),
+      new Edge<int>("a", "END", always),
+      new Edge<int>("b", "END", always)
+    ],
+    "a",
+    4
+  );
+  val BuildResult<int> mismatched = ambiguous.compile();
+  val GraphBuilder<int> repeated = new GraphBuilder<int>(
+    arr[new Node<int>("a", increase)],
+    arr[
+      new Edge<int>("START", "a", always),
+      new Edge<int>("START", "a", always),
+      new Edge<int>("a", "END", always)
+    ],
+    "a", 4
+  );
+  val BuildResult<int> duplicate_start = repeated.compile();
+  val GraphBuilder<int> none = new GraphBuilder<int>(
+    arr[new Node<int>("a", increase)],
+    arr[new Edge<int>("START", "a", always),new Edge<int>("a", "END", always)],
+    "", 4
+  );
+  val BuildResult<int> no_entry = none.compile();
+  if mismatched.status == "invalid_graph:entry_mismatch" &&
+     duplicate_start.status == "invalid_graph:ambiguous_entry" &&
+     no_entry.status == "invalid_graph:invalid_entry"; do
+    stdio.stdout.write("sg:builder-entry-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:builder-entry-fail");
+  return;
+}
