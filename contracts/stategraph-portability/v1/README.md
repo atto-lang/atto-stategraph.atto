@@ -83,3 +83,16 @@ No status is called **parity achieved** unless *the exact same StateGraph
 program sources* compile and execute under every target without backend-specific
 source rewrites. The baseline scalar subset is a bootstrapping check only.
 Keep implementation and compatibility PRs draft while gates fail.
+
+
+## First shared generic-state source milestone
+
+The native Oreslang source file `contracts/stategraph-portability/shared-generic-state.ores`
+is a byte-for-byte copy of this contract's `02-generic-state.ores` (canonical Git
+blob `c3a67b837a73f427a6157c446cc6e3989e9a66da`). The same file and blob is
+now staged in Java/Graal, LLVM, Wasm, Cranelift and .NET backend parity PRs.
+Its `GraphState<T>` declaration, explicit constructor, immutable field, and
+`main() == 42` expose a true generic userland requirement. The source-only
+manifest gate verifies its Git blob but **does not** claim any compiler accepts
+or executes it. Every backend must record either a real guest receipt or an
+explicit missing-feature diagnostic; a scalar success is not generic parity.

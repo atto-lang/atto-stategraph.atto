@@ -61,5 +61,13 @@ git ls-files --error-unmatch -- "$shared" >/dev/null 2>&1 || die "untracked shar
 [ "$(git rev-parse "HEAD:$shared")" = "ec1cb5e6cc38c26842d724ccacb0df028b702c3f" ] ||
   die "canonical shared scalar differs from committed file"
 
+generic=contracts/stategraph-portability/shared-generic-state.ores
+[ -f "$generic" ] && [ ! -L "$generic" ] || die "canonical generic fixture missing or symlinked"
+git ls-files --error-unmatch -- "$generic" >/dev/null 2>&1 || die "untracked canonical generic"
+[ "$(git hash-object "$generic")" = "c3a67b837a73f427a6157c446cc6e3989e9a66da" ] ||
+  die "canonical generic source blob mismatch"
+[ "$(git rev-parse "HEAD:$generic")" = "c3a67b837a73f427a6157c446cc6e3989e9a66da" ] ||
+  die "canonical generic source HEAD mismatch"
+
 printf 'SG_PORTABILITY_SOURCE_ONLY_PASS requirements=9 source_files=10 head=%s tree=%s\n' \
   "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
