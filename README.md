@@ -145,3 +145,5 @@ References: LangGraph StateGraph and Pregel superstep execution.
 - Actor integration through `state` / `handle_state(critical ...)` awaits compiler-backed evidence and careful ownership/pending-FIFO synchronization.
 
 See [the actor run ledger design and gates](docs/ACTOR_RUN_LEDGER.md) and [the separate verification workflow](.github/workflows/graph-run-ledger.yml).
+
+The **experimental** `examples/experimental/graph_run_coordinator.ores` sketches a concrete `define isolated actor` with actor-owned `state`, critical `handle_state` transitions, and cancellation-rejection smoke flow. It has **not** been admitted by an Oreslang compiler and is intentionally excluded from the native acceptance manifest. This source is not a claim of working actor scheduling.

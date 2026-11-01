@@ -1,0 +1,110 @@
+// EXPERIMENTAL Oreslang actor adapter for the GraphRun ledger.
+// NOT IN NATIVE ACCEPTANCE until the Java/Graal and LLVM compilers genuinely
+// support state-schema loans and critical handle_state callback lowering.
+// Fixed strings below are local demonstration data, NOT tenant authentication.
+// No external I/O, actor fan-out, checkpoint, or worker cancellation transport.
+import class RunKey, RunState, ClaimReceipt, Claimed from "../../src/run_ledger";
+import fnc start, enqueue, claim, publish, cancel, finish from "../../src/run_ledger";
+
+define isolated actor GraphRunCoordinator as
+  state {
+    // The only owned mutable run snapshot and outstanding receipt are stored
+    // inside the concrete actor's single state schema, never ordinary fields.
+    current: RunState = new RunState(
+      new RunKey("demo-tenant", "demo-run", 1),
+      0, 1, 4, 2, 0, 0, 0, 0, 1
+    );
+    last_claim: ClaimReceipt = new ClaimReceipt(
+      new RunKey("demo-tenant", "demo-run", 1), 0, 0
+    );
+  }
+
+  receive(ActorMail<String> mail): void {
+    // Never await or send while the critical state loan is held. Only the
+    // coordinator owns the immutable run ledger and consumes its receipts.
+    val String reply = self.handle_state(critical |owned| -> {
+      val RunKey key = new RunKey("demo-tenant", "demo-run", 1);
+      if mail.value == "start"; do
+        val Result<RunState, String> next = start(
+          rt borrow owned.current, rt borrow key, owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        owned.current = next.unwrap();
+        return "started";
+      fi
+      if mail.value == "enqueue"; do
+        val Result<RunState, String> next = enqueue(
+          rt borrow owned.current, rt borrow key, owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        owned.current = next.unwrap();
+        return "enqueued";
+      fi
+      if mail.value == "claim"; do
+        val Result<Claimed, String> next = claim(
+          rt borrow owned.current, rt borrow key, owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        val Claimed c = next.unwrap();
+        owned.current = c.state;
+        owned.last_claim = c.receipt;
+        return "claimed";
+      fi
+      if mail.value == "publish"; do
+        val Result<RunState, String> next = publish(
+          rt borrow owned.current, rt borrow owned.last_claim,
+          owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        owned.current = next.unwrap();
+        return "published";
+      fi
+      if mail.value == "cancel"; do
+        val Result<RunState, String> next = cancel(
+          rt borrow owned.current, rt borrow key, owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        owned.current = next.unwrap();
+        return "canceled";
+      fi
+      if mail.value == "finish"; do
+        val Result<RunState, String> next = finish(
+          rt borrow owned.current, rt borrow key, owned.current.version);
+        if next.is_err(); do return "rejected"; fi
+        owned.current = next.unwrap();
+        return "finished";
+      fi
+      return "unknown";
+    });
+    self.send(reply);
+    if mail.value == "stop"; do self.end(); fi
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val coordinator = await spawn GraphRunCoordinator();
+  coordinator.send("publish");
+  val denied_early = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("start");
+  val started = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("enqueue");
+  val queued = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("claim");
+  val claimed = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("cancel");
+  val canceled = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("publish");
+  val denied_late = (await coordinator.outputs.next()).value.unwrap();
+  coordinator.send("stop");
+  val stopped = (await coordinator.outputs.next()).value.unwrap();
+  await coordinator.get_done();
+
+  if denied_early.value == "rejected" &&
+     started.value == "started" &&
+     queued.value == "enqueued" &&
+     claimed.value == "claimed" &&
+     canceled.value == "canceled" &&
+     denied_late.value == "rejected" &&
+     stopped.value == "unknown"; do
+    stdio.stdout.write("SG_RUN_ACTOR_EXPERIMENTAL_PASS");
+  else
+    stdio.stdout.write("SG_RUN_ACTOR_EXPERIMENTAL_FAIL");
+  fi
+  return;
+}

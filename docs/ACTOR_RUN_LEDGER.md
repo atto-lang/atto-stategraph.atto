@@ -35,6 +35,12 @@ All events use optimistic version preconditions and reject malformed externally 
 
 Keep `sg.StateGraph<S>` (serial), `SuperstepGraph<S>` (in-memory supersteps), and the ledger separate until exact-head native compiler evidence exists. `SuperstepGraph<S>.invoke` executes callbacks synchronously and may advance multiple steps. Treat it as **one atomic logical work item** when called from the graph actor; claiming per-node or per-superstep receipts requires a future incremental step API. `GraphResult<S>` from an untrusted or canceled worker is only a candidate: the coordinator must check the claim, generation, version and graph definition pin before publishing. Retain the original state on any failed check.
 
+## Experimental native actor adapter (not accepted or proven executable)
+
+`examples/experimental/graph_run_coordinator.ores` now sketches a concrete `define isolated actor GraphRunCoordinator` with a single `state { ... }` schema, synchronous `self.handle_state(critical |owned| -> { ... })` transitions and output messages **outside** the critical state-loan scope. It also contains a demo entry routine probing early publish rejection, start, enqueue, claim, cancel, late publish rejection, and explicit stop. It intentionally uses fixed fixture strings and the actor state has no credential or durable authority. This source is an **experimental compiler-admission target**: it is excluded from the 3-test accepted manifest because the exact actor syntax and implementation must be validated on real Java/Graal and LLVM compilers. Until it compiles and executes, do not call it a working actor implementation.
+
+Do not add parallel workers or claim synchronized queue reservation on the basis of this adapter alone: the ledger is a credit counter, not a physical FIFO. The next actor stage must add real typed bounded pending-message storage and keep its count in lockstep with the ledger.
+
 ## Regression / evidence matrix
 
 Three new native Oreslang fixtures in `tests/run-ledger.ores`, `tests/run-cancellation.ores`, `tests/run-budget.ores` cover successful state transitions, duplicate/foreign/stale receipts, cancellation-fenced publications, bounded queue credits and logical step budgets. Their **source presence is not a native test pass**. The exact-head `ci/verify-run-ledger-native.sh` checks source SHA/tree, dirty/untracked/ignored/symlink admission, pinned/compiler build-info and executes all three with bounded `--check` and exact stdout.
