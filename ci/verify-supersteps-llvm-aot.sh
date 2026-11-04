@@ -62,7 +62,10 @@ printf 'SG_LLVM_AOT_BEGIN tree=%s compiler_sha256=%s clang_sha256=%s\n' \
   "$(git rev-parse 'HEAD^{tree}')" "$compiler_sha" "$clang_sha"
 while IFS='|' read -r path expected || [ -n "$path" ]; do
   case "$path" in '' | \#*) continue;; esac
+  case "$path" in *..* | *//*) die "manifest path traversal or duplicate separator";; esac
   case "$suite:$path" in
+    supersteps:tests/*/*.ores | serial:tests/native/*/*.ores)
+      die "nested fixture path outside declared suite";;
     supersteps:tests/*.ores | serial:tests/native/*.ores) ;;
     *) die "unexpected path for selected suite";;
   esac
