@@ -74,7 +74,7 @@ local `Array<int>`/`Array<String>`. The complete StateGraph needs:
 - actual native actor scheduling, checkpoint persistence and replay later.
 
 The shared scalar-superstep contract with Git blob
-`0c1213cbedaf439e8f554627cf2174f4f2684d94` is an **incremental
+`054d4e9fe297c520513686feae076dc921f581ac` is an **incremental
 scalar semantics probe**, not the production graph implementation.
 It must execute identically on Java/Graal and LLVM with exact-head evidence.
 Even if it passes, full StateGraph parity remains unproven.
@@ -91,3 +91,5 @@ independent review exist.
 The LLVM repository's deny-by-default
 `docs/security/CI_PRIVATE_SOURCE_MIRRORING.md` remains authoritative for
 all private LLVM-source exports; this work does not authorize new mirrors.
+
+The shared bounded-cycle guest has blob `3c69cdf00c4e1390898ef0594eba76c54c0e2d7f`; it exercises bounded recursion and termination routing, still not the production graph.
