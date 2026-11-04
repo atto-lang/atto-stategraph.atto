@@ -73,7 +73,7 @@ git ls-files --error-unmatch -- "$generic" >/dev/null 2>&1 || die "untracked can
 # Additional semantic kernel has exactly the same Git blob in the Java and
 # LLVM compiler repos; source integrity never counts as executable parity.
 superstep=contracts/stategraph-portability/shared-superstep-scalar.ores
-superstep_sha=0c1213cbedaf439e8f554627cf2174f4f2684d94
+superstep_sha=054d4e9fe297c520513686feae076dc921f581ac
 [ -f "$superstep" ] && [ ! -L "$superstep" ] ||
   die "shared superstep fixture missing or symlinked"
 git ls-files --error-unmatch -- "$superstep" >/dev/null 2>&1 ||
