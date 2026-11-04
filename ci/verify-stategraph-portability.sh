@@ -83,5 +83,17 @@ git ls-files --error-unmatch -- "$superstep" >/dev/null 2>&1 ||
 [ "$(git rev-parse "HEAD:$superstep")" = "$superstep_sha" ] ||
   die "shared superstep HEAD mismatch"
 
+
+cycle=contracts/stategraph-portability/shared-bounded-cycle.ores
+cycle_sha=3c69cdf00c4e1390898ef0594eba76c54c0e2d7f
+[ -f "$cycle" ] && [ ! -L "$cycle" ] ||
+  die "shared bounded-cycle guest missing or symlinked"
+git ls-files --error-unmatch -- "$cycle" >/dev/null 2>&1 ||
+  die "shared bounded-cycle guest untracked"
+[ "$(git hash-object "$cycle")" = "$cycle_sha" ] ||
+  die "shared bounded-cycle guest drift"
+[ "$(git rev-parse "HEAD:$cycle")" = "$cycle_sha" ] ||
+  die "shared bounded-cycle HEAD mismatch"
+
 printf 'SG_PORTABILITY_SOURCE_ONLY_PASS requirements=9 source_files=10 head=%s tree=%s\n' \
   "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
