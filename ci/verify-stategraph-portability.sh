@@ -95,5 +95,17 @@ git ls-files --error-unmatch -- "$cycle" >/dev/null 2>&1 ||
 [ "$(git rev-parse "HEAD:$cycle")" = "$cycle_sha" ] ||
   die "shared bounded-cycle HEAD mismatch"
 
+
+canonical=contracts/stategraph-portability/shared-canonical-then.ores
+canonical_sha=ad42a13d1542d8df6215bff42d056a489015c842
+[ -f "$canonical" ] && [ ! -L "$canonical" ] ||
+  die "shared canonical if/then guest missing or symlinked"
+git ls-files --error-unmatch -- "$canonical" >/dev/null 2>&1 ||
+  die "shared canonical if/then guest untracked"
+[ "$(git hash-object "$canonical")" = "$canonical_sha" ] ||
+  die "shared canonical if/then guest drift"
+[ "$(git rev-parse "HEAD:$canonical")" = "$canonical_sha" ] ||
+  die "shared canonical if/then HEAD mismatch"
+
 printf 'SG_PORTABILITY_SOURCE_ONLY_PASS requirements=9 source_files=10 head=%s tree=%s\n' \
   "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
