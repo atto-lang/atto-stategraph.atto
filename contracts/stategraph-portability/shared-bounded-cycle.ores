@@ -1,0 +1,22 @@
+// Shared scalar cycle semantics for Java/GraalVM and native LLVM.
+// This is a bounded recursion contract, NOT a production StateGraph runtime.
+fnc advance_cycle(int committed, int remaining): int {
+  if remaining <= 0; do
+    return committed;
+  fi
+  return advance_cycle(committed + 1, remaining - 1);
+}
+
+fnc route_at_target(int merged): bool {
+  return merged == 42;
+}
+
+pub fnc main(): int {
+  if advance_cycle(40, 0) != 40; do return 1; fi
+  if advance_cycle(40, 1) != 41; do return 2; fi
+  if advance_cycle(40, 2) != 42; do return 3; fi
+  if advance_cycle(40, -1) != 40; do return 4; fi
+  if route_at_target(41); do return 5; fi
+  if !route_at_target(advance_cycle(40, 2)); do return 6; fi
+  return advance_cycle(40, 2);
+}
