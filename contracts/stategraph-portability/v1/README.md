@@ -96,3 +96,22 @@ Its `GraphState<T>` declaration, explicit constructor, immutable field, and
 manifest gate verifies its Git blob but **does not** claim any compiler accepts
 or executes it. Every backend must record either a real guest receipt or an
 explicit missing-feature diagnostic; a scalar success is not generic parity.
+
+## Shared scalar-superstep and bounded-cycle source (LLVM/JVM)
+
+Two additional native Oreslang sources are authored byte-identically in this
+repo and the Java/LLVM backend parity PR branches:
+
+- `contracts/stategraph-portability/shared-superstep-scalar.ores`: Git blob
+  `054d4e9fe297c520513686feae076dc921f581ac`. Checks same-state node
+  reads, additive merge, step-budget/duplicate-key refusal and routing.
+- `contracts/stategraph-portability/shared-bounded-cycle.ores`: Git blob
+  `3c69cdf00c4e1390898ef0594eba76c54c0e2d7f`. Checks bounded recursion
+  and conditional termination.
+
+These use common `if ...; do` syntax to avoid divergent guard parsers. The
+source-only verifier pins both blobs; real Java/Truffle and LLVM/Clang test
+scripts require exit code 42, empty guest stdout and stderr, and exact source
+hashes. They do NOT compile `SuperstepGraph<S>` or make LLVM class-array,
+generic callback, checkpoint or actor parity claims. Both backends still need
+stepful compiler and guest evidence on their updated PR heads.
