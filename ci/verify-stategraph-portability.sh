@@ -69,5 +69,19 @@ git ls-files --error-unmatch -- "$generic" >/dev/null 2>&1 || die "untracked can
 [ "$(git rev-parse "HEAD:$generic")" = "c3a67b837a73f427a6157c446cc6e3989e9a66da" ] ||
   die "canonical generic source HEAD mismatch"
 
+
+# Additional semantic kernel has exactly the same Git blob in the Java and
+# LLVM compiler repos; source integrity never counts as executable parity.
+superstep=contracts/stategraph-portability/shared-superstep-scalar.ores
+superstep_sha=0c1213cbedaf439e8f554627cf2174f4f2684d94
+[ -f "$superstep" ] && [ ! -L "$superstep" ] ||
+  die "shared superstep fixture missing or symlinked"
+git ls-files --error-unmatch -- "$superstep" >/dev/null 2>&1 ||
+  die "shared superstep fixture untracked"
+[ "$(git hash-object "$superstep")" = "$superstep_sha" ] ||
+  die "shared superstep fixture changed"
+[ "$(git rev-parse "HEAD:$superstep")" = "$superstep_sha" ] ||
+  die "shared superstep HEAD mismatch"
+
 printf 'SG_PORTABILITY_SOURCE_ONLY_PASS requirements=9 source_files=10 head=%s tree=%s\n' \
   "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
