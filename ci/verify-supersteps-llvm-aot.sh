@@ -47,7 +47,12 @@ fi
 tmp="$(mktemp -d)" || die "cannot create temporary directory"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 chmod 700 "$tmp"
-manifest=ci/supersteps-native-cases.txt
+suite="$(printenv SG_NATIVE_SUITE || true)"
+case "$suite" in
+  "" | supersteps) suite=supersteps; manifest=ci/supersteps-native-cases.txt; required=4;;
+  serial) manifest=ci/native-cases.txt; required=8;;
+  *) die "unknown LLVM guest suite";;
+esac
 [ -f "$manifest" ] && [ ! -L "$manifest" ] || die "missing fixture manifest"
 git ls-files --error-unmatch -- "$manifest" >/dev/null 2>&1 ||
   die "untracked fixture manifest"
@@ -56,9 +61,13 @@ count=0
 printf 'SG_LLVM_AOT_BEGIN tree=%s compiler_sha256=%s clang_sha256=%s\n' \
   "$(git rev-parse 'HEAD^{tree}')" "$compiler_sha" "$clang_sha"
 while IFS='|' read -r path expected || [ -n "$path" ]; do
-  case "$path" in '' | \#*) continue;; tests/*.ores) ;; *) die "unsafe case path";; esac
+  case "$path" in '' | \#*) continue;; esac
+  case "$suite:$path" in
+    supersteps:tests/*.ores | serial:tests/native/*.ores) ;;
+    *) die "unexpected path for selected suite";;
+  esac
   case "$path" in *[!a-zA-Z0-9._/-]*) die "unsafe source characters";; esac
-  case "$expected" in '' | *[!A-Z0-9_]*) die "unsafe expected guest stdout";; esac
+  case "$expected" in '' | *[!a-zA-Z0-9:_-]*) die "unsafe expected guest stdout";; esac
   [ -s "$path" ] && [ ! -L "$path" ] || die "missing or symlinked guest"
   git ls-files --error-unmatch -- "$path" >/dev/null 2>&1 || die "untracked guest"
   if grep -Fxq "$path" "$tmp/seen"; then die "duplicate guest"; fi
@@ -86,8 +95,8 @@ while IFS='|' read -r path expected || [ -n "$path" ]; do
   [ ! -s "$tmp/stderr" ] || die "unexpected guest stderr"
   printf '%s' "$expected" | cmp -s - "$tmp/stdout" ||
     die "wrong native guest stdout for $path"
-  printf 'SG_LLVM_AOT_CASE_PASS file=%s blob=%s guest_exit=0\n' "$path" "$blob"
+  printf 'SG_LLVM_AOT_CASE_PASS suite=%s file=%s blob=%s guest_exit=0\n' "$suite" "$path" "$blob"
 done < "$manifest"
-[ "$count" -eq 4 ] || die "missing native superstep cases"
-printf 'SG_LLVM_AOT_PASS count=%s tree=%s compiler_sha256=%s clang_sha256=%s\n' \
-  "$count" "$(git rev-parse 'HEAD^{tree}')" "$compiler_sha" "$clang_sha"
+[ "$count" -eq "$required" ] || die "missing/extra native guest cases"
+printf 'SG_LLVM_AOT_PASS suite=%s count=%s tree=%s compiler_sha256=%s clang_sha256=%s\n' \
+  "$suite" "$count" "$(git rev-parse 'HEAD^{tree}')" "$compiler_sha" "$clang_sha"
