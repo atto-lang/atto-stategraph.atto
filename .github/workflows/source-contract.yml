@@ -44,5 +44,25 @@ jobs:
           fi
           grep -q 'missing compiler build_mode' /tmp/sg-fake-compiler-log
           echo 'HARNESS_NEGATIVE_PASS: /usr/bin/true rejected; no guest evidence'
+      - name: Audit LLVM-specific AOT adapter (source-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n ci/verify-supersteps-llvm-aot.sh
+          grep -q -- '--target=host' ci/verify-supersteps-llvm-aot.sh
+          grep -q -- '-x ir' ci/verify-supersteps-llvm-aot.sh
+          grep -q 'SG_LLVM_AOT_PASS' ci/verify-supersteps-llvm-aot.sh
+          awk '/^  llvm-guest:/{llvm=1;next} /^  [a-z-]+:/{llvm=0} llvm{print}' \
+            .github/workflows/supersteps-native.yml >/tmp/sg-llvm-supersteps-block
+          grep -q 'sh ci/verify-supersteps-llvm-aot.sh' /tmp/sg-llvm-supersteps-block
+          if grep -q 'sh ci/verify-supersteps-native.sh' /tmp/sg-llvm-supersteps-block; then
+            echo 'LLVM job incorrectly invokes the direct Java guest runner' >&2
+            exit 1
+          fi
+          awk '/^  native-llvm:/{llvm=1;next} /^  [a-z-]+:/{llvm=0} llvm{print}' \
+            .github/workflows/native.yml >/tmp/sg-llvm-serial-block
+          grep -q 'SG_NATIVE_SUITE: serial' /tmp/sg-llvm-serial-block
+          grep -q 'sh ci/verify-supersteps-llvm-aot.sh' /tmp/sg-llvm-serial-block
+          echo 'SG_LLVM_AOT_STATIC_POLICY_PASS (NOT a compiled guest)'
       - name: Explicit evidence boundary
         run: echo 'SOURCE_ONLY_PASS is not native Oreslang compiler or runtime evidence.'
