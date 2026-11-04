@@ -115,3 +115,14 @@ scripts require exit code 42, empty guest stdout and stderr, and exact source
 hashes. They do NOT compile `SuperstepGraph<S>` or make LLVM class-array,
 generic callback, checkpoint or actor parity claims. Both backends still need
 stepful compiler and guest evidence on their updated PR heads.
+
+## Canonical if/then syntax parity
+
+The additional shared source `contracts/stategraph-portability/shared-canonical-then.ores`
+uses both canonical `if condition then ... fi` and legacy `if condition; do`
+for guards and scalar state transitions. Git blob:
+`ad42a13d1542d8df6215bff42d056a489015c842` across StateGraph,
+Java and LLVM. LLVM PR #1268 patches both native parser paths and requires a
+real LLVM/Clang guest exit 42, while Java PR #2415 requires the same source
+on the JVM. LLVM additionally asserts that `if x = y then` emits no IR.
+The shared profile guard pins this source, but remains **source-only**.
