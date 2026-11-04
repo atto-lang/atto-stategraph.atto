@@ -64,5 +64,23 @@ jobs:
           grep -q 'SG_NATIVE_SUITE: serial' /tmp/sg-llvm-serial-block
           grep -q 'sh ci/verify-supersteps-llvm-aot.sh' /tmp/sg-llvm-serial-block
           echo 'SG_LLVM_AOT_STATIC_POLICY_PASS (NOT a compiled guest)'
+      - name: Fake LLVM compiler and Clang must never pass native acceptance
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export EXPECTED_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export ORESLANG_LLVM_BIN=/usr/bin/true
+          export SG_CLANG_BIN=/usr/bin/true
+          export ORESLANG_COMPILER_SHA256="$(sha256sum /usr/bin/true | cut -d' ' -f1)"
+          export SG_CLANG_SHA256="$ORESLANG_COMPILER_SHA256"
+          unset SG_LLVM_RUNTIME_ARCHIVE SG_LLVM_RUNTIME_SHA256
+          if sh ci/verify-supersteps-llvm-aot.sh > /tmp/sg-fake-llvm-log 2>&1; then
+            echo 'UNSAFE: fake LLVM compiler accepted' >&2
+            exit 1
+          fi
+          grep -q 'compiler emitted no native main definition' /tmp/sg-fake-llvm-log
+          echo 'LLVM_AOT_HARNESS_NEGATIVE_PASS (source-only, not a guest test)'
       - name: Explicit evidence boundary
         run: echo 'SOURCE_ONLY_PASS is not native Oreslang compiler or runtime evidence.'
