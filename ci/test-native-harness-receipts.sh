@@ -41,4 +41,14 @@ cp "$manifest" "$tmp/oracle"; sed -i "1s@${cases[0]}@${cases[1]}@" "$tmp/oracle"
 if bash "$checker" "$tmp/oracle" "$base" >/dev/null 2>&1; then echo 'HOST_RECEIPT_MUTATION_MISSED: duplicate_oracle' >&2; exit 1; fi
 cp "$manifest" "$tmp/oracle"; sed -i '1d' "$tmp/oracle"
 if bash "$checker" "$tmp/oracle" "$base" >/dev/null 2>&1; then echo 'HOST_RECEIPT_MUTATION_MISSED: short_oracle' >&2; exit 1; fi
-printf 'HOST_ONLY_RECEIPT_MUTATIONS_PASS cases=21; NOT_COMPILER_EXECUTION\n'
+# Arbitrary completion order is valid only when all six exact IDs are present.
+{ sed -n '6p' "$base"; sed -n '2,5p' "$base"; sed -n '1p' "$base"; sed -n '7p' "$base"; } > "$mutant"
+bash "$checker" "$manifest" "$mutant" > /dev/null
+# UTF-8 BOM or non-ASCII prefix cannot be laundered into a pass receipt.
+cp "$base" "$mutant"
+printf '\357\273\277' > "$tmp/bom"
+cat "$mutant" >> "$tmp/bom"
+cp "$tmp/bom" "$mutant"
+reject utf8_bom
+
+printf 'HOST_ONLY_RECEIPT_MUTATIONS_PASS cases=22; NOT_COMPILER_EXECUTION\n'
