@@ -51,4 +51,41 @@ cat "$mutant" >> "$tmp/bom"
 cp "$tmp/bom" "$mutant"
 reject utf8_bom
 
+# The native admission script must fail BEFORE source-policy execution when
+# the checkout contains untracked files or changed verification helpers.
+identity="$tmp/native-identity"
+mkdir -p "$identity/ci"
+cp ci/verify-native.sh "$identity/ci/verify-native.sh"
+printf '#!/bin/sh\nprintf "AUDIT_FIXTURE_REACHED\\n"\nexit 74\n' > "$identity/ci/audit-source.sh"
+git -C "$identity" init -q
+git -C "$identity" add ci
+git -C "$identity" -c user.name=Fixture -c user.email=fixture@example.invalid \
+  commit -qm 'pinned admission fixture'
+identity_sha="$(git -C "$identity" rev-parse HEAD)"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: clean fixture reached fake acceptance' >&2
+  exit 1
+fi
+grep -Fq AUDIT_FIXTURE_REACHED "$tmp/identity.out"
+printf 'untracked helper\n' > "$identity/ci/extra-receipt"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: untracked helper' >&2
+  exit 1
+fi
+grep -Fq 'dirty source tree' "$tmp/identity.out"
+if grep -Fq AUDIT_FIXTURE_REACHED "$tmp/identity.out"; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: audit ran on untracked helper' >&2
+  exit 1
+fi
+rm "$identity/ci/extra-receipt"
+printf '# modified verifier policy\n' >> "$identity/ci/audit-source.sh"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: modified audit' >&2
+  exit 1
+fi
+grep -Fq 'dirty source tree' "$tmp/identity.out"
+
 printf 'HOST_ONLY_RECEIPT_MUTATIONS_PASS cases=22; NOT_COMPILER_EXECUTION\n'
