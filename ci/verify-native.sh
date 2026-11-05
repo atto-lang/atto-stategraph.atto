@@ -12,7 +12,9 @@ case "$head" in *[!0123456789abcdef]* | '') die "invalid source commit";; esac
 if [ -n "${EXPECTED_SOURCE_SHA:-}" ] && [ "$head" != "$EXPECTED_SOURCE_SHA" ]; then
   die "source SHA mismatch (expected $EXPECTED_SOURCE_SHA, observed $head)"
 fi
-[ -z "$(git status --porcelain --untracked-files=normal -- src/ tests/native/ ci/native-cases.txt)" ] ||
+# Source ownership includes the verifier, audit policy, docs and test manifest.
+# A dirty helper or untracked file must never inherit an exact-HEAD receipt.
+[ -z "$(git status --porcelain --untracked-files=all)" ] ||
   die "dirty source tree"
 sh ci/audit-source.sh
 case "${ORESLANG_BIN:-}" in /*) ;; *) die "set absolute ORESLANG_BIN";; esac
