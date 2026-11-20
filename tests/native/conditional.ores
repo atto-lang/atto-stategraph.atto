@@ -1,0 +1,38 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(String state): bool { return true; }
+fnc urgent(String state): bool { return state == "classified-urgent"; }
+fnc normal(String state): bool { return state == "classified-normal"; }
+fnc classify(String node, String state): String {
+  if state == "urgent"; do return "classified-urgent"; fi
+  return "classified-normal";
+}
+fnc review(String node, String state): String { return "review-required"; }
+fnc reply(String node, String state): String { return "sent"; }
+
+pub routine main(): void {
+  val StateGraph<String> graph = new StateGraph<String>(
+    arr[
+      new Node<String>("classify", classify),
+      new Node<String>("review", review),
+      new Node<String>("reply", reply)
+    ],
+    arr[
+      new Edge<String>("START", "classify", always),
+      new Edge<String>("classify", "review", urgent),
+      new Edge<String>("classify", "reply", normal),
+      new Edge<String>("review", "END", always),
+      new Edge<String>("reply", "END", always)
+    ],
+    8
+  );
+  val RunResult<String> a = graph.run("urgent");
+  val RunResult<String> b = graph.run("normal");
+  if a.status == "completed" && a.state == "review-required" && a.steps == 2 &&
+     b.status == "completed" && b.state == "sent" && b.steps == 2; do
+    stdio.stdout.write("sg:conditional-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:conditional-fail");
+  return;
+}

@@ -1,0 +1,27 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+fnc more(int state): bool { return state < 3; }
+fnc done(int state): bool { return state >= 3; }
+fnc tick(String node, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val List<Node<int>> nodes = arr[new Node<int>("tick", tick)];
+  val List<Edge<int>> edges = arr[
+    new Edge<int>("START", "tick", always),
+    new Edge<int>("tick", "tick", more),
+    new Edge<int>("tick", "END", done)
+  ];
+  val StateGraph<int> enough = new StateGraph<int>(nodes, edges, 3);
+  val StateGraph<int> bounded = new StateGraph<int>(nodes, edges, 2);
+  val RunResult<int> a = enough.run(0);
+  val RunResult<int> b = bounded.run(0);
+  if a.status == "completed" && a.state == 3 && a.steps == 3 &&
+     b.status == "step_limit" && b.state == 2 && b.steps == 2 &&
+     b.cursor == "tick"; do
+    stdio.stdout.write("sg:bounded-loop-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:bounded-loop-fail");
+  return;
+}

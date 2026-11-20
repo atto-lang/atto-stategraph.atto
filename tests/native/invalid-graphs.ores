@@ -1,0 +1,37 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(String state): bool { return true; }
+fnc never(String state): bool { return false; }
+fnc update(String node, String state): String { return state + "-updated"; }
+
+pub routine main(): void {
+  val StateGraph<String> duplicate = new StateGraph<String>(
+    arr[new Node<String>("a", update), new Node<String>("a", update)],
+    arr[new Edge<String>("START", "a", always), new Edge<String>("a", "END", always)], 4
+  );
+  val StateGraph<String> dangling = new StateGraph<String>(
+    arr[new Node<String>("a", update)],
+    arr[new Edge<String>("START", "a", always), new Edge<String>("a", "missing", always)], 4
+  );
+  val StateGraph<String> no_start = new StateGraph<String>(
+    arr[new Node<String>("a", update)],
+    arr[new Edge<String>("a", "END", always)], 4
+  );
+  val StateGraph<String> bad_budget = new StateGraph<String>(
+    arr[new Node<String>("a", update)],
+    arr[new Edge<String>("START", "a", always), new Edge<String>("a", "END", always)], 0
+  );
+  val RunResult<String> a = duplicate.run("seed");
+  val RunResult<String> b = dangling.run("seed");
+  val RunResult<String> c = no_start.run("seed");
+  val RunResult<String> d = bad_budget.run("seed");
+
+  if a.status == "invalid_graph:duplicate_node" && b.status == "invalid_graph:unknown_target" &&
+     c.status == "invalid_graph:missing_start" && d.status == "invalid_graph:invalid_budget" &&
+     a.steps == 0 && b.steps == 0 && a.state == "seed" && b.state == "seed"; do
+    stdio.stdout.write("sg:invalid-graphs-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:invalid-graphs-fail");
+  return;
+}

@@ -1,0 +1,70 @@
+// Typed, deterministic, non-mutating state patch reduction.
+// A patch payload P is a concrete nominal type chosen by the caller.
+// Every patch carries a non-empty, exact channel key. Unknown or repeated
+// channels in one batch are rejected before ANY reducer callback executes.
+// Reducers MUST be pure. External I/O effects cannot be rolled back.
+define module patches as
+  pub define class StatePatch<P> as
+    pub val String channel;
+    pub val P change;
+  end
+
+  pub define class StateReducer<S, P> as
+    pub val String channel;
+    pub val Fnc<S(S, P)> merge;
+  end
+
+  pub define class PatchBatchResult<S> as
+    pub val String status;
+    pub val S state;
+    pub val int applied;
+  end
+
+  pub fnc apply_batch<S, P>(
+    S initial,
+    List<StatePatch<P>> writes,
+    List<StateReducer<S, P>> reducers
+  ): PatchBatchResult<S> {
+    // A separate preflight pass ensures a detected schema conflict cannot
+    // execute user code or partially change the returned state.
+    for const write of writes do
+      if write.channel == ""; do
+        return new PatchBatchResult<S>("invalid_channel", initial, 0);
+      fi
+      let int write_count = 0;
+      for const other of writes do
+        if other.channel == write.channel; do
+          write_count = write_count + 1;
+        fi
+      done
+      if write_count != 1; do
+        return new PatchBatchResult<S>("write_conflict", initial, 0);
+      fi
+
+      let int reducer_count = 0;
+      for const reducer of reducers do
+        if reducer.channel == write.channel; do
+          reducer_count = reducer_count + 1;
+        fi
+      done
+      if reducer_count == 0; do
+        return new PatchBatchResult<S>("unknown_channel", initial, 0);
+      fi
+      if reducer_count != 1; do
+        return new PatchBatchResult<S>("duplicate_reducer", initial, 0);
+      fi
+    done
+
+    let S state = initial;
+    let int applied = 0;
+    for const write of writes do
+      for const reducer of reducers do
+        if write.channel == reducer.channel; do
+          state = reducer.merge(state, write.change);
+          applied = applied + 1;
+        fi
+      done
+    done
+    return new PatchBatchResult<S>("applied", state, applied);
+  }
+end
