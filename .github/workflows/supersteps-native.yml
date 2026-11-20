@@ -1,0 +1,26 @@
+name: Oreslang typed SuperstepGraph native guest
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  supersteps-native-graal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Exact tree pinned native guest smoke
+        shell: bash
+        env:
+          EXPECTED_TREE_SHA: ${{ vars.SG_EXPECTED_TREE_SHA }}
+          ORESLANG_BIN: ${{ vars.ORESLANG_GRAAL_BIN }}
+          ORESLANG_COMPILER_SHA256: ${{ vars.ORESLANG_GRAAL_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_TREE_SHA" || { echo 'NO_NATIVE_EVIDENCE: exact source-tree pin missing'; exit 1; }
+          test -n "$ORESLANG_BIN" || { echo 'NO_NATIVE_EVIDENCE: compiler missing'; exit 1; }
+          test -n "$ORESLANG_COMPILER_SHA256" || { echo 'NO_NATIVE_EVIDENCE: compiler digest missing'; exit 1; }
+          sh ci/verify-supersteps-native.sh

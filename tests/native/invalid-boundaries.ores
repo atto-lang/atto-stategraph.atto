@@ -1,0 +1,33 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+fnc increase(String name, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val StateGraph<int> reserved_node = new StateGraph<int>(
+    arr[new Node<int>("END", increase)],
+    arr[new Edge<int>("START", "END", always)], 1
+  );
+  val StateGraph<int> reserved_edge = new StateGraph<int>(
+    arr[new Node<int>("ok", increase)],
+    arr[new Edge<int>("START", "ok", always),
+        new Edge<int>("ok", "START", always)], 1
+  );
+  val StateGraph<int> unknown_source = new StateGraph<int>(
+    arr[new Node<int>("ok", increase)],
+    arr[new Edge<int>("START", "ok", always),
+        new Edge<int>("missing", "END", always)], 1
+  );
+  val RunResult<int> a = reserved_node.run(1);
+  val RunResult<int> b = reserved_edge.run(1);
+  val RunResult<int> c = unknown_source.run(1);
+  if a.status == "invalid_graph:reserved_node" &&
+     b.status == "invalid_graph:reserved_edge" &&
+     c.status == "invalid_graph:unknown_source" &&
+     a.steps == 0 && b.steps == 0 && c.steps == 0; do
+    stdio.stdout.write("sg:invalid-boundaries-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:invalid-boundaries-fail");
+  return;
+}

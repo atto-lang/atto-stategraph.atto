@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# HOST ONLY: synthetic receipt mutations are not native Oreslang guest executions.
+set -euo pipefail
+export LC_ALL=C
+cd "$(dirname "$0")/.."
+checker=ci/verify-native-harness-receipts.sh
+manifest=ci/native-harness-cases.txt
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; chmod 700 "$tmp"
+mapfile -t cases < "$manifest"
+[[ ${#cases[@]} -eq 6 ]] || exit 1
+base="$tmp/base.out"
+for name in "${cases[@]}"; do printf 'ORES_TEST|PASS|%s|\n' "$name" >> "$base"; done
+printf 'ORES_TEST|SUMMARY|total=6|passed=6|failed=0|skipped=0|filtered=0\n' >> "$base"
+bash "$checker" "$manifest" "$base" >/dev/null
+mutant="$tmp/mutant.out"
+reject() {
+  if bash "$checker" "$manifest" "$mutant" > "$tmp/check.out" 2> "$tmp/check.err"; then
+    printf 'HOST_RECEIPT_MUTATION_MISSED: %s\n' "$1" >&2; exit 1
+  fi
+}
+cp "$base" "$mutant"; sed -i "1s@${cases[0]}@${cases[1]}@" "$mutant"; reject duplicate_case
+cp "$base" "$mutant"; sed -i '1d' "$mutant"; reject missing_case
+cp "$base" "$mutant"; sed -i '1s@PASS@FAIL@' "$mutant"; reject fail_event
+cp "$base" "$mutant"; sed -i '1s@PASS@SKIP@' "$mutant"; reject skip_event
+cp "$base" "$mutant"; sed -i '1s@PASS|@PASS|unexpected/@' "$mutant"; reject unexpected_id
+cp "$base" "$mutant"; sed -i '1s@|$@@' "$mutant"; reject missing_pipe
+cp "$base" "$mutant"; sed -i '1s@|$@|unexpected@' "$mutant"; reject detail
+cp "$base" "$mutant"; sed -i '1s@|$@||@' "$mutant"; reject extra_pipe
+cp "$base" "$mutant"; sed -i '7s@passed=6@passed=5@' "$mutant"; reject incorrect_summary
+cp "$base" "$mutant"; sed -i '7s@filtered=0@filtered=1@' "$mutant"; reject filtered_summary
+cp "$base" "$mutant"; sed -i '7d' "$mutant"; reject missing_summary
+cp "$base" "$mutant"; sed -i '7i ORES_TEST|SUMMARY|total=6|passed=6|failed=0|skipped=0|filtered=0' "$mutant"; reject duplicate_summary
+cp "$base" "$mutant"; sed -i '1i ORES_TEST|SUMMARY|total=6|passed=6|failed=0|skipped=0|filtered=0' "$mutant"; reject early_summary
+cp "$base" "$mutant"; sed -i '1i ALIEN_OUTPUT' "$mutant"; reject alien_output
+cp "$base" "$mutant"; sed -i '1s@^@\x1b[31m@' "$mutant"; reject ansi_output
+cp "$base" "$mutant"; sed -i '1s@$@\r@' "$mutant"; reject CR_output
+cp "$base" "$mutant"; sed -i '1s@|$@\x00|@' "$mutant"; reject NUL_output
+cp "$base" "$mutant"; truncate -s -1 "$mutant"; reject missing_final_LF
+cp "$base" "$mutant"; printf '\n' >> "$mutant"; reject extra_blank
+cp "$manifest" "$tmp/oracle"; sed -i "1s@${cases[0]}@${cases[1]}@" "$tmp/oracle"
+if bash "$checker" "$tmp/oracle" "$base" >/dev/null 2>&1; then echo 'HOST_RECEIPT_MUTATION_MISSED: duplicate_oracle' >&2; exit 1; fi
+cp "$manifest" "$tmp/oracle"; sed -i '1d' "$tmp/oracle"
+if bash "$checker" "$tmp/oracle" "$base" >/dev/null 2>&1; then echo 'HOST_RECEIPT_MUTATION_MISSED: short_oracle' >&2; exit 1; fi
+# Arbitrary completion order is valid only when all six exact IDs are present.
+{ sed -n '6p' "$base"; sed -n '2,5p' "$base"; sed -n '1p' "$base"; sed -n '7p' "$base"; } > "$mutant"
+bash "$checker" "$manifest" "$mutant" > /dev/null
+# UTF-8 BOM or non-ASCII prefix cannot be laundered into a pass receipt.
+cp "$base" "$mutant"
+printf '\357\273\277' > "$tmp/bom"
+cat "$mutant" >> "$tmp/bom"
+cp "$tmp/bom" "$mutant"
+reject utf8_bom
+
+# The native admission script must fail BEFORE source-policy execution when
+# the checkout contains untracked files or changed verification helpers.
+identity="$tmp/native-identity"
+mkdir -p "$identity/ci"
+cp ci/verify-native.sh "$identity/ci/verify-native.sh"
+printf '#!/bin/sh\nprintf "AUDIT_FIXTURE_REACHED\\n"\nexit 74\n' > "$identity/ci/audit-source.sh"
+git -C "$identity" init -q
+git -C "$identity" add ci
+git -C "$identity" -c user.name=Fixture -c user.email=fixture@example.invalid \
+  commit -qm 'pinned admission fixture'
+identity_sha="$(git -C "$identity" rev-parse HEAD)"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: clean fixture reached fake acceptance' >&2
+  exit 1
+fi
+grep -Fq AUDIT_FIXTURE_REACHED "$tmp/identity.out"
+printf 'untracked helper\n' > "$identity/ci/extra-receipt"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: untracked helper' >&2
+  exit 1
+fi
+grep -Fq 'dirty source tree' "$tmp/identity.out"
+if grep -Fq AUDIT_FIXTURE_REACHED "$tmp/identity.out"; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: audit ran on untracked helper' >&2
+  exit 1
+fi
+rm "$identity/ci/extra-receipt"
+printf '# modified verifier policy\n' >> "$identity/ci/audit-source.sh"
+if EXPECTED_SOURCE_SHA="$identity_sha" sh "$identity/ci/verify-native.sh" \
+  >"$tmp/identity.out" 2>&1; then
+  echo 'HOST_IDENTITY_GUARD_MISSED: modified audit' >&2
+  exit 1
+fi
+grep -Fq 'dirty source tree' "$tmp/identity.out"
+
+printf 'HOST_ONLY_RECEIPT_MUTATIONS_PASS cases=22; NOT_COMPILER_EXECUTION\n'

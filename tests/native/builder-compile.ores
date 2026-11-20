@@ -1,0 +1,30 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+import class GraphBuilder, BuildResult from "../../src/builder";
+
+fnc always(int state): bool { return true; }
+fnc increase(String name, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val GraphBuilder<int> empty = new GraphBuilder<int>(arr[], arr[], "", 0);
+  val GraphBuilder<int> defined = empty.with_nodes(
+    arr[new Node<int>("counter", increase)]
+  );
+  val GraphBuilder<int> wired = defined.with_edges(arr[
+    new Edge<int>("START", "counter", always),
+    new Edge<int>("counter", "END", always)
+  ]);
+  val GraphBuilder<int> entered = wired.set_entry_point("counter");
+  val GraphBuilder<int> graph = entered.set_step_budget(4);
+  val BuildResult<int> compiled = graph.compile();
+  val RunResult<int> completed = compiled.graph.run(10);
+  val BuildResult<int> bad = graph.set_entry_point("absent").compile();
+
+  if compiled.status == "compiled" && completed.status == "completed" &&
+     completed.state == 11 && completed.steps == 1 &&
+     bad.status == "invalid_graph:missing_entry"; do
+    stdio.stdout.write("sg:builder-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:builder-fail");
+  return;
+}

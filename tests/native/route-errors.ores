@@ -1,0 +1,33 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(String state): bool { return true; }
+fnc never(String state): bool { return false; }
+fnc update(String node, String state): String { return "candidate-not-committed"; }
+
+pub routine main(): void {
+  val StateGraph<String> ambiguous = new StateGraph<String>(
+    arr[new Node<String>("work", update)],
+    arr[
+      new Edge<String>("START", "work", always),
+      new Edge<String>("work", "END", always),
+      new Edge<String>("work", "work", always)
+    ], 4
+  );
+  val StateGraph<String> unmatched = new StateGraph<String>(
+    arr[new Node<String>("work", update)],
+    arr[
+      new Edge<String>("START", "work", always),
+      new Edge<String>("work", "END", never)
+    ], 4
+  );
+  val RunResult<String> a = ambiguous.run("initial");
+  val RunResult<String> b = unmatched.run("initial");
+  if a.status == "ambiguous_edge" && b.status == "unmatched_edge" &&
+     a.state == "initial" && b.state == "initial" &&
+     a.steps == 1 && b.steps == 1; do
+    stdio.stdout.write("sg:route-errors-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:route-errors-fail");
+  return;
+}

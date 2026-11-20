@@ -1,0 +1,20 @@
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+fnc next(String name, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val StateGraph<int> graph = new StateGraph<int>(
+    arr[new Node<int>("sink", next)],
+    arr[new Edge<int>("START", "sink", always)],
+    4
+  );
+  val RunResult<int> result = graph.run(7);
+  if result.status == "invalid_graph:missing_outgoing" &&
+     result.state == 7 && result.steps == 0; do
+    stdio.stdout.write("sg:missing-outgoing-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:missing-outgoing-fail");
+  return;
+}
