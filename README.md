@@ -43,3 +43,11 @@ This describes the repository's intended purpose, not a verified list of impleme
 AttoLang is the canonical project name; new source, examples and documentation use `.atto` and the `atto-lang` repository organization. This README defines scope, not feature readiness.
 
 **Acceptance:** name exact source SHA/tree, runtime/toolchain, positive and negative checks and execution receipt before claiming support. Host-only tests and empty CI steps do not prove guest execution.
+
+## Legacy provenance and migration guardrails
+
+The historical predecessor `ores-truffle-oreslang/oreslang-sg-stategraph.ores` is archived; the current `atto-lang/atto-stategraph.atto` has a separate numeric GitHub identity. Preserve supported legacy `.ores` inputs and historical package/CLI aliases until compiler-backed replacements are verified; new language source follows the canonical `.atto` [grammar](https://github.com/atto-lang/atto-spec/blob/main/spec/01-source-and-syntax.md) and [ownership contract](https://github.com/atto-lang/atto-spec/blob/main/spec/04-ownership-and-memory.md).
+
+StateGraph data models, actor-owned state transitions and portable tests belong here; global deployment orchestration and host-only substitutes for guest proofs do not. [atto-lang](https://github.com/atto-lang) owns language, portable libraries and tooling; [atto-co](https://github.com/atto-co) separately governs managed hosting, deployment, tenant identity and billing. Further original-ID transfers or product carve-outs require separate owner authorization and independent security review.
+
+Before an authorized transfer, record exact SHA/tree, numeric ID, source/target administrators, access, branch protections, releases, PRs, packages, dependencies, runners, secrets, apps, webhooks, Pages and rollback ownership. Verify identity, history and controls afterward, and retest consumer references. Never mirror private source without authorization. Empty or null steps are NOT_EXECUTED; host or structural checks cannot establish compiled guest execution or parity.
