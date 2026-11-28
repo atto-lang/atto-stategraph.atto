@@ -11,7 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Verify exact original commit and physical checked-out source
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/verify_ci_checkout_head.sh
+      - name: Test adversarial Git source-identity controls
+        run: python3 -m unittest discover -s tests -p test_ci_checkout_head_20261106.py -v
       - name: Check tracked native source (not a guest test)
         shell: bash
         run: |
