@@ -1,0 +1,30 @@
+// Reducer registry is valid even when this batch has no writes.
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc add(int old, int value): int { return old + value; }
+pub routine main(): void {
+  val List<StatePatch<int>> no_writes = arr[];
+  val List<StateReducer<int,int>> repeated = arr[
+    new StateReducer<int,int>("add", add),
+    new StateReducer<int,int>("add", add)
+  ];
+  val List<StateReducer<int,int>> empty_key = arr[
+    new StateReducer<int,int>("", add)
+  ];
+  val List<StateReducer<int,int>> valid = arr[
+    new StateReducer<int,int>("add", add)
+  ];
+  val PatchBatchResult<int> a = apply_batch<int,int>(42, no_writes, repeated);
+  val PatchBatchResult<int> b = apply_batch<int,int>(42, no_writes, empty_key);
+  val PatchBatchResult<int> c = apply_batch<int,int>(42, no_writes, valid);
+  if a.status == "duplicate_reducer" && a.applied == 0 &&
+     a.state == 42 && b.status == "invalid_reducer" &&
+     b.applied == 0 && b.state == 42 &&
+     c.status == "applied" && c.state == 42 && c.applied == 0; do
+    stdio.stdout.write("sg:invalid-reducer-registry-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:invalid-reducer-registry-fail");
+  return;
+}

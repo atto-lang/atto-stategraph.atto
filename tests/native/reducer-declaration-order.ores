@@ -1,0 +1,31 @@
+// Reducer registry order must not affect patch submission order or state.
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc add(int old, int value): int { return old + value; }
+fnc multiply(int old, int value): int { return old * value; }
+
+pub routine main(): void {
+  val List<StatePatch<int>> writes = arr[
+    new StatePatch<int>("add", 3),
+    new StatePatch<int>("multiply", 4)
+  ];
+  val List<StateReducer<int,int>> forward = arr[
+    new StateReducer<int,int>("add", add),
+    new StateReducer<int,int>("multiply", multiply)
+  ];
+  val List<StateReducer<int,int>> reverse = arr[
+    new StateReducer<int,int>("multiply", multiply),
+    new StateReducer<int,int>("add", add)
+  ];
+  val PatchBatchResult<int> a = apply_batch<int,int>(2, writes, forward);
+  val PatchBatchResult<int> b = apply_batch<int,int>(2, writes, reverse);
+  if a.status == "applied" && b.status == "applied" &&
+     a.applied == 2 && b.applied == 2 &&
+     a.state == 20 && b.state == 20; do
+    stdio.stdout.write("sg:reducer-declaration-order-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:reducer-declaration-order-fail");
+  return;
+}

@@ -1,0 +1,10 @@
+// Module namespace, typed helper calls and return.
+define module stategraph_probe as
+  pub fnc increment(int value): int {
+    return value + 1;
+  }
+end
+
+pub fnc main(): int {
+  return stategraph_probe.increment(41);
+}

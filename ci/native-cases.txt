@@ -7,3 +7,12 @@ tests/native/builder-compile.ores|sg:builder-ok
 tests/native/patch-batch.ores|sg:patch-batch-ok
 tests/native/invalid-boundaries.ores|sg:invalid-boundaries-ok
 tests/native/missing-outgoing.ores|sg:missing-outgoing-ok
+tests/native/preflight-budget.ores|sg:preflight-budget-ok
+tests/native/patch-order.ores|sg:patch-order-ok
+tests/native/patch-empty.ores|sg:patch-empty-ok
+tests/native/branch-at-start.ores|sg:branch-at-start-ok
+tests/native/budget-frontier.ores|sg:budget-frontier-ok
+tests/native/direct-end.ores|sg:direct-end-ok
+tests/native/patch-precedence.ores|sg:patch-precedence-ok
+tests/native/invalid-reducer-registry.ores|sg:invalid-reducer-registry-ok
+tests/native/reducer-declaration-order.ores|sg:reducer-declaration-order-ok

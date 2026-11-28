@@ -1,0 +1,12 @@
+// Nominal generic graph state, owned immutable value.
+define pub class GraphState<T> as
+  pub val T value;
+  pub constructor(T value) {
+    self.value = value;
+  }
+end
+
+pub fnc main(): int {
+  val GraphState<int> initial = new GraphState<int>(42);
+  return initial.value;
+}

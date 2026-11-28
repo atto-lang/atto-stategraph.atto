@@ -1,0 +1,35 @@
+// Applying distinct reducer writes is deterministic in submitted patch order.
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc add(int old, int delta): int { return old + delta; }
+fnc multiply(int old, int factor): int { return old * factor; }
+fnc subtract(int old, int delta): int { return old - delta; }
+
+pub routine main(): void {
+  val List<StateReducer<int, int>> reducers = arr[
+    new StateReducer<int, int>("add", add),
+    new StateReducer<int, int>("multiply", multiply),
+    new StateReducer<int, int>("subtract", subtract)
+  ];
+  val List<StatePatch<int>> forward = arr[
+    new StatePatch<int>("add", 3),
+    new StatePatch<int>("multiply", 4),
+    new StatePatch<int>("subtract", 5)
+  ];
+  val List<StatePatch<int>> reordered = arr[
+    new StatePatch<int>("multiply", 4),
+    new StatePatch<int>("add", 3),
+    new StatePatch<int>("subtract", 5)
+  ];
+  val PatchBatchResult<int> left = apply_batch<int, int>(2, forward, reducers);
+  val PatchBatchResult<int> right = apply_batch<int, int>(2, reordered, reducers);
+
+  if left.status == "applied" && left.applied == 3 && left.state == 15 &&
+     right.status == "applied" && right.applied == 3 && right.state == 6; do
+    stdio.stdout.write("sg:patch-order-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:patch-order-fail");
+  return;
+}

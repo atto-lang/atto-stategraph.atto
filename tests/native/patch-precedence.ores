@@ -1,0 +1,36 @@
+// Preflight has deterministic failure precedence and never partially publishes.
+import class StatePatch, StateReducer, PatchBatchResult from "../../src/patches";
+import fnc apply_batch from "../../src/patches";
+
+fnc add(int old, int value): int { return old + value; }
+
+pub routine main(): void {
+  val List<StateReducer<int, int>> known = arr[
+    new StateReducer<int, int>("known", add)
+  ];
+  val PatchBatchResult<int> blank = apply_batch<int, int>(
+    42, arr[new StatePatch<int>("", 2)], known
+  );
+  val PatchBatchResult<int> duplicate = apply_batch<int, int>(
+    42,
+    arr[new StatePatch<int>("unknown", 2), new StatePatch<int>("unknown", 3)],
+    known
+  );
+  val PatchBatchResult<int> unknown = apply_batch<int, int>(
+    42, arr[new StatePatch<int>("unknown", 2)], known
+  );
+  val PatchBatchResult<int> valid = apply_batch<int, int>(
+    40, arr[new StatePatch<int>("known", 2)], known
+  );
+  if blank.status == "invalid_channel" && blank.state == 42 &&
+     blank.applied == 0 && duplicate.status == "write_conflict" &&
+     duplicate.state == 42 && duplicate.applied == 0 &&
+     unknown.status == "unknown_channel" && unknown.state == 42 &&
+     unknown.applied == 0 && valid.status == "applied" &&
+     valid.state == 42 && valid.applied == 1; do
+    stdio.stdout.write("sg:patch-precedence-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:patch-precedence-fail");
+  return;
+}

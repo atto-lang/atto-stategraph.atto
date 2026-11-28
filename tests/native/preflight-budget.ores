@@ -1,0 +1,33 @@
+// Resource and step budgets fail before evaluating any graph callbacks.
+import class StateGraph, Node, Edge, RunResult from "../../src/stategraph";
+
+fnc always(int state): bool { return true; }
+fnc increment(String node, int state): int { return state + 1; }
+
+pub routine main(): void {
+  val List<Node<int>> nodes = arr[new Node<int>("tick", increment)];
+  val List<Edge<int>> edges = arr[
+    new Edge<int>("START", "tick", always),
+    new Edge<int>("tick", "END", always)
+  ];
+  val StateGraph<int> over = new StateGraph<int>(nodes, edges, 10001);
+  val StateGraph<int> zero = new StateGraph<int>(nodes, edges, 0);
+  val StateGraph<int> negative = new StateGraph<int>(nodes, edges, -1);
+  val StateGraph<int> boundary = new StateGraph<int>(nodes, edges, 10000);
+  val RunResult<int> a = over.run(41);
+  val RunResult<int> b = zero.run(41);
+  val RunResult<int> c = negative.run(41);
+  val RunResult<int> d = boundary.run(41);
+
+  if a.status == "invalid_graph:invalid_budget" &&
+     b.status == "invalid_graph:invalid_budget" &&
+     c.status == "invalid_graph:invalid_budget" &&
+     a.state == 41 && b.state == 41 && c.state == 41 &&
+     a.steps == 0 && b.steps == 0 && c.steps == 0 &&
+     d.status == "completed" && d.state == 42 && d.steps == 1; do
+    stdio.stdout.write("sg:preflight-budget-ok");
+    return;
+  fi
+  stdio.stdout.write("sg:preflight-budget-fail");
+  return;
+}

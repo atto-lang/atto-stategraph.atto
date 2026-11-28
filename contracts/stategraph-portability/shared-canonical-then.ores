@@ -1,0 +1,21 @@
+// Canonical if-condition then/fi source parity: Graal and LLVM must both run.
+// Also preserves the semicolon/do guard form used by existing Oreslang source.
+fnc canonical_guard(int input): int {
+  if input == 42 then return input; fi
+  return 0;
+}
+
+fnc legacy_guard(int input): int {
+  if input == 42; do return input; fi
+  return 0;
+}
+
+pub fnc main(): int {
+  let int state = 40;
+  if state < 42 then
+    state = state + 2;
+  fi
+  if canonical_guard(state) != 42 then return 1; fi
+  if legacy_guard(state) != 42 then return 2; fi
+  return state;
+}

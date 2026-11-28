@@ -1,0 +1,24 @@
+// Experimental actor-owned state and critical loan admission.
+define isolated actor GraphOwner as
+  state {
+    completed: int = 0;
+  }
+
+  receive(ActorMail<int> mail): void {
+    val int next = self.handle_state(critical |s| -> {
+      s.completed = s.completed + mail.value;
+      return s.completed;
+    });
+    self.send(next);
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val owner = await spawn GraphOwner();
+  owner.send(42);
+  val reply = (await owner.outputs.next()).value.unwrap();
+  if reply.value == 42 then stdio.stdout.write("SG_PORTABLE_ACTOR_PASS"); fi
+  owner.end();
+  await owner.get_done();
+}

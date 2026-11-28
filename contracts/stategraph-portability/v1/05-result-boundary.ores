@@ -1,0 +1,11 @@
+// Explicit Result admission, no null and no implicit error coercion.
+fnc safe(int value): Result<int, String> {
+  if value < 0 then return Err("negative"); fi
+  return Ok(value + 1);
+}
+
+pub fnc main(): int {
+  val Result<int, String> answer = safe(41);
+  if answer.is_err() then return 1; fi
+  return answer.unwrap();
+}

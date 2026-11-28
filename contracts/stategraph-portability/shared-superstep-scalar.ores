@@ -1,0 +1,50 @@
+// Portable Oreslang scalar superstep semantic kernel.
+// Uses the shared if-condition; do ... fi spelling admitted by both source parsers.
+// This does NOT implement StateGraph<S>, arbitrary reducers, actors or heap ownership.
+// It tests the shared arithmetic/routing primitives before generic graph lowering.
+fnc node_add_two(int committed): int {
+  return committed + 2;
+}
+
+fnc node_add_three(int committed): int {
+  return committed + 3;
+}
+
+// Both node results must be computed from the SAME committed snapshot.
+fnc merge_sum(int committed, int first, int second): int {
+  return committed + (first - committed) + (second - committed);
+}
+
+// Admission happens before any write is committed.
+fnc can_commit(int budget, int first_key, int second_key): bool {
+  if budget < 1; do
+    return false;
+  fi
+  if first_key == second_key; do
+    return false;
+  fi
+  return true;
+}
+
+fnc route_after_merge(int merged): bool {
+  return merged == 42;
+}
+
+pub fnc main(): int {
+  val int snapshot = 37;
+  val int first = node_add_two(snapshot);
+  val int second = node_add_three(snapshot);
+
+  if first != 39; do return 1; fi
+  if second != 40; do return 2; fi
+  if can_commit(0, 1, 2); do return 3; fi
+  if can_commit(1, 1, 1); do return 4; fi
+  if !can_commit(1, 1, 2); do return 5; fi
+
+  val int merged = merge_sum(snapshot, first, second);
+  if merged != 42; do return 6; fi
+  if !route_after_merge(merged); do return 7; fi
+  if route_after_merge(snapshot); do return 8; fi
+  if snapshot != 37; do return 9; fi
+  return merged;
+}

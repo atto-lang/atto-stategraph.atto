@@ -1,0 +1,15 @@
+// Generic superstep patch and reducer type signature.
+define pub class StatePatch<T> as
+  pub val T value;
+  pub constructor(T value) { self.value = value; }
+end
+
+fnc update(int value): int {
+  return value + 1;
+}
+fnc apply(Fnc<int(int)> reducer, StatePatch<int> patch): int {
+  return reducer(patch.value);
+}
+pub fnc main(): int {
+  return apply(update, new StatePatch<int>(41));
+}
